@@ -205,6 +205,10 @@ export class InMemoryFinanceService implements FinanceService {
       status: 'draft',
       createdAt: now,
       createdByUserId: ctx.userId,
+      submittedAt: undefined,
+      approvedAt: undefined,
+      rejectedAt: undefined,
+      paidAt: undefined,
     };
 
     this.claims.push(claim);
@@ -250,26 +254,35 @@ export class InMemoryFinanceService implements FinanceService {
     }
 
     const now = new Date();
+
+    const allowedTransitions: Record<ClaimStatus, ClaimStatus[]> = {
+      draft: ['submitted'],
+      submitted: ['approved', 'rejected'],
+      approved: ['paid'],
+      rejected: [],
+      paid: [],
+    };
+
+    const current = claim.status;
+    const allowed = allowedTransitions[current] ?? [];
+    if (!allowed.includes(newStatus)) {
+      throw new Error(
+        `Illegal claim status change from ${current} to ${newStatus}`
+      );
+    }
+
     claim.status = newStatus;
 
     if (newStatus === 'submitted') {
       claim.submittedAt = claim.submittedAt ?? now;
-    }
-
-    if (newStatus === 'approved') {
-      claim.submittedAt = claim.submittedAt ?? now;
+    } else if (newStatus === 'approved') {
       claim.approvedAt = claim.approvedAt ?? now;
       claim.rejectedAt = undefined;
-    }
-
-    if (newStatus === 'rejected') {
+    } else if (newStatus === 'rejected') {
       claim.rejectedAt = claim.rejectedAt ?? now;
       claim.approvedAt = undefined;
-    }
-
-    if (newStatus === 'paid') {
-      claim.submittedAt = claim.submittedAt ?? now;
-      claim.approvedAt = claim.approvedAt ?? now;
+    } else if (newStatus === 'paid') {
+      // Ensure approved first per allowed transitions.
       claim.paidAt = claim.paidAt ?? now;
     }
 
