@@ -1,7 +1,7 @@
 // src/core/notices/in-memory-notice.service.ts
 
 import { randomUUID } from 'crypto';
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import {
   Notice,
   NoticeSummary,

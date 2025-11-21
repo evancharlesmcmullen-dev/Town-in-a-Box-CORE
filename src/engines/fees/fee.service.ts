@@ -1,6 +1,6 @@
 // src/engines/fees/fee.service.ts
 
-import { TenantContext } from '../../core/tenancy/types';
+import { TenantContext } from '../../core/tenancy/tenancy.types';
 import {
   FeeItem,
   FeeSchedule,

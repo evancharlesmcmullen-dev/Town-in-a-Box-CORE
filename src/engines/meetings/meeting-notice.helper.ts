@@ -1,6 +1,6 @@
 // src/engines/meetings/meeting-notice.helper.ts
 
-import { TenantContext } from '../../core/tenancy/types';
+import { TenantContext } from '../../core/tenancy/tenancy.types';
 import { Meeting, MeetingType } from './meeting.types';
 import {
   NoticeService,

@@ -1,6 +1,6 @@
 // src/states/in/legal/in-legal-engine.ts
 
-import { JurisdictionProfile } from '../../../core/tenancy/types';
+import { JurisdictionProfile } from '../../../core/tenancy/tenancy.types';
 import {
   ApraRuleSet,
   MeetingRuleSet,
@@ -8,6 +8,8 @@ import {
   DeadlineRule,
   TemplateDescriptor,
   ApraExemption,
+  AssistanceRuleSet,
+  ComplianceTaskTemplate,
 } from '../../../core/legal/types';
 import { LegalEngine } from '../../../core/legal/legal-engine';
 
@@ -37,11 +39,10 @@ export class INLegalEngine implements LegalEngine {
       {
         id: 'APRA_INITIAL_RESPONSE',
         description:
-          'Provide an initial response to an APRA request within a reasonable time; same day if in person or telephone, 7 days if by mail/email is a typical best practice.',
+          'Provide an initial response to an APRA request within a reasonable time; 7 business days is used here as a best-practice outer bound for written requests.',
         eventType: 'APRA_REQUEST_RECEIVED',
         offsetBusinessDays: 7,
       },
-      // Later we can add explicit production deadlines per record type, etc.
     ];
 
     const exemptions: ApraExemption[] = [
@@ -55,9 +56,8 @@ export class INLegalEngine implements LegalEngine {
         id: 'APRA_DISCRETIONARY_EXEMPTIONS',
         citation: 'IC 5-14-3-4(b)',
         description:
-          'Records the agency may withhold at its discretion, such as investigatory records, deliberative material, certain personnel records, etc.',
+          'Records the agency may withhold at its discretion, such as investigatory records, deliberative material, certain personnel records, and other sensitive categories.',
       },
-      // We can expand this list over time as we encode more specific exemptions.
     ];
 
     return {
@@ -68,12 +68,12 @@ export class INLegalEngine implements LegalEngine {
   }
 
   //
-  // MEETINGS / OPEN DOOR LAW RULES
+  // MEETINGS / OPEN DOOR LAW
   //
 
   getMeetingsRules(j: JurisdictionProfile): MeetingRuleSet {
     if (!isIndianaTown(j)) {
-      // For now, treat non-town Indiana units the same until we specialize them.
+      // For now, treat other Indiana units the same until we specialize.
     }
 
     const deadlines: DeadlineRule[] = [
@@ -87,25 +87,24 @@ export class INLegalEngine implements LegalEngine {
       {
         id: 'MEETING_NOTICE_SPECIAL',
         description:
-          'Post notice of a special meeting at least 48 hours before the meeting, unless emergency circumstances apply.',
+          'Post notice of a special meeting at least 48 hours before the meeting unless an emergency justifies shorter notice.',
         eventType: 'MEETING_SCHEDULED_SPECIAL',
         offsetBusinessDays: 2,
       },
-      // Later: emergency meetings, continued meetings, etc.
     ];
 
     const execSessionTopics = [
       {
         code: 'EXEC_SESSION_PERSONNEL',
         description:
-          'Executive session to discuss job performance evaluations of individual employees (not salary, benefits, or creation of new position).',
+          'Executive session to discuss job performance evaluations of individual employees (not salary, benefits, or creation of a new position).',
       },
       {
         code: 'EXEC_SESSION_LITIGATION',
         description:
           'Executive session for strategy discussion with respect to initiation or pending litigation.',
       },
-      // Add more allowed topics over time based on IC 5-14-1.5-6.1.
+      // Additional allowed topics from IC 5-14-1.5-6.1 can be added over time.
     ];
 
     return {
@@ -115,12 +114,12 @@ export class INLegalEngine implements LegalEngine {
   }
 
   //
-  // PLANNING / BZA RULES
+  // PLANNING / BZA
   //
 
   getPlanningRules(j: JurisdictionProfile): PlanningRuleSet {
     if (!isIndianaTown(j)) {
-      // For now, treat non-town Indiana units the same until we specialize them.
+      // For now, treat other Indiana units the same until we specialize.
     }
 
     const caseTypes: string[] = [
@@ -140,7 +139,7 @@ export class INLegalEngine implements LegalEngine {
         id: 'BZA_USE_VARIANCE_FINDINGS',
         purpose: 'BZA_FINDINGS',
         description:
-          'Findings of fact template for use variance cases, tracking the statutory criteria for use variances.',
+          'Findings of fact template for use variance cases, tracking statutory criteria for use variances.',
       },
       {
         id: 'BZA_DEVELOPMENT_VARIANCE_FINDINGS',
@@ -172,6 +171,64 @@ export class INLegalEngine implements LegalEngine {
       caseTypes,
       findingsTemplates,
     };
+  }
+
+  //
+  // ASSISTANCE RULES (TOWNSHIP POOR RELIEF)
+  //
+
+  getAssistanceRules(j: JurisdictionProfile): AssistanceRuleSet {
+    // Basic Indiana-wide defaults; we can refine for towns vs townships later.
+    return {
+      decisionDeadlineHours: 72, // emergency / rapid decision guidance
+      requiresWrittenStandards: true,
+    };
+  }
+
+  //
+  // COMPLIANCE TASK TEMPLATES
+  //
+
+  getComplianceTaskTemplates(
+    j: JurisdictionProfile,
+  ): ComplianceTaskTemplate[] {
+    // For now, use the same base set for Indiana towns & townships.
+    const tasks: ComplianceTaskTemplate[] = [
+      {
+        code: 'BOARD_OF_FINANCE',
+        name: 'Board of Finance meeting',
+        description:
+          'Hold the annual Board of Finance meeting to review investments and name officers.',
+        statutoryCitation: 'IC 5-13-7-6',
+        recurrenceHint: 'annual in January',
+      },
+      {
+        code: 'ANNUAL_REPORT_APPROVAL',
+        name: 'Approve annual financial report',
+        description:
+          'Township Board approves the Trustee’s annual financial report.',
+        statutoryCitation: 'IC 36-6-6-9',
+        recurrenceHint: 'annual in January',
+      },
+      {
+        code: 'PERSONNEL_100R',
+        name: 'File 100R personnel report',
+        description:
+          'Submit annual personnel report (Form 100R) to SBOA listing employees and compensation.',
+        statutoryCitation: 'IC 5-11-13-1',
+        recurrenceHint: 'annual by January 31',
+      },
+      {
+        code: 'ASSISTANCE_STATS_REPORT',
+        name: 'File township assistance statistical report',
+        description:
+          'File township assistance statistical report (TA-7 or successor) as required by statute.',
+        statutoryCitation: 'IC 12-20-28-3',
+        recurrenceHint: 'annual',
+      },
+    ];
+
+    return tasks;
   }
 
   //

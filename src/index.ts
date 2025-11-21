@@ -2,7 +2,7 @@ import { INLegalEngine } from './states/in/legal/in-legal-engine';
 import {
   JurisdictionProfile,
   TenantContext,
-} from './core/tenancy/types';
+} from './core/tenancy/tenancy.types';
 import { InMemoryApraService } from './engines/records/in-memory-apra.service';
 import { ApraService } from './engines/records/apra.service';
 

@@ -1,7 +1,7 @@
 // src/core/tasks/in-memory-task.service.ts
 
 import { randomUUID } from 'crypto';
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import { Task } from './task.types';
 import { TaskService } from './task.service';
 

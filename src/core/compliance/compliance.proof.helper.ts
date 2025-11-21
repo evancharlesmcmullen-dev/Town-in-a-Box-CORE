@@ -1,6 +1,6 @@
 // src/core/compliance/compliance.proof.helper.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import { ComplianceService } from './compliance.service';
 
 export async function attachProofToOccurrence(

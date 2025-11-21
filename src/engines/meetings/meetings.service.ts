@@ -1,6 +1,6 @@
 // src/engines/meetings/meetings.service.ts
 
-import { TenantContext } from '../../core/tenancy/types';
+import { TenantContext } from '../../core/tenancy/tenancy.types';
 import {
   GoverningBody,
   Meeting,
@@ -73,6 +73,11 @@ export interface MeetingsService {
 
   /**
    * Record a vote taken during a meeting.
+   */
+  recordVote(
+    ctx: TenantContext,
+    vote: VoteRecord
+  ): Promise<void>;
 
   // Later we can add:
   // - attachAgenda(...)

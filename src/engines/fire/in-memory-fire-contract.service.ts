@@ -1,7 +1,7 @@
 // src/engines/fire/in-memory-fire-contract.service.ts
 
 import { randomUUID } from 'crypto';
-import { TenantContext } from '../../core/tenancy/types';
+import { TenantContext } from '../../core/tenancy/tenancy.types';
 import {
   FireServiceContract,
   FirePerformanceSnapshot,

@@ -1,6 +1,6 @@
 // src/core/payments/payment.service.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import { PaymentIntent, Payment, PaymentMethodType } from './payment.types';
 
 export interface PaymentGatewayDriver {

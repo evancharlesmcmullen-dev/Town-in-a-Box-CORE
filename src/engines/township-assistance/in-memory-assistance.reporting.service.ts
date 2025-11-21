@@ -1,6 +1,6 @@
 // src/engines/township-assistance/in-memory-assistance.reporting.service.ts
 
-import { TenantContext } from '../../core/tenancy/types';
+import { TenantContext } from '../../core/tenancy/tenancy.types';
 import {
   AssistanceApplication,
   AssistanceBenefit,
@@ -14,19 +14,19 @@ import {
 } from './assistance.reporting.types';
 import { TownshipAssistanceReportingService } from './assistance.reporting.service';
 import { InMemoryAssistanceService } from './in-memory-assistance.service';
-import { TownshipAssistanceService } from './assistance.service';
 
 /**
  * Reporting implementation that reuses the in-memory assistance arrays.
- * Expects to be constructed with an InMemoryAssistanceService instance
- * (or anything that exposes the same in-memory fields).
+ * Expects to be constructed with an InMemoryAssistanceService instance.
  */
-export class InMemoryAssistanceReportingService implements TownshipAssistanceReportingService {
+export class InMemoryAssistanceReportingService
+  implements TownshipAssistanceReportingService
+{
   private cases: AssistanceCase[];
   private benefits: AssistanceBenefit[];
   private applications: AssistanceApplication[];
 
-  constructor(assistanceService: InMemoryAssistanceService | TownshipAssistanceService) {
+  constructor(assistanceService: InMemoryAssistanceService) {
     // Reach into the in-memory service to reuse its arrays.
     const anyService = assistanceService as any;
     this.cases = anyService.cases ?? [];
@@ -50,8 +50,12 @@ export class InMemoryAssistanceReportingService implements TownshipAssistanceRep
 
     const totalCases = tenantCases.length;
     const openCases = tenantCases.filter((c) => c.status === 'open').length;
-    const approvedCases = tenantCases.filter((c) => c.status === 'approved').length;
-    const deniedCases = tenantCases.filter((c) => c.status === 'denied').length;
+    const approvedCases = tenantCases.filter(
+      (c) => c.status === 'approved'
+    ).length;
+    const deniedCases = tenantCases.filter(
+      (c) => c.status === 'denied'
+    ).length;
     const paidCases = tenantCases.filter((c) => c.status === 'paid').length;
 
     const totalBenefitsCents = tenantBenefits.reduce(
@@ -59,7 +63,10 @@ export class InMemoryAssistanceReportingService implements TownshipAssistanceRep
       0
     );
 
-    const benefitsByTypeMap: Record<string, { totalAmountCents: number; caseIds: Set<string> }> = {};
+    const benefitsByTypeMap: Record<
+      string,
+      { totalAmountCents: number; caseIds: Set<string> }
+    > = {};
 
     for (const benefit of tenantBenefits) {
       const key = benefit.type;
@@ -104,7 +111,7 @@ export class InMemoryAssistanceReportingService implements TownshipAssistanceRep
     ctx: TenantContext,
     tenantCases: AssistanceCase[]
   ): HouseholdSizeBucketStats[] {
-    const buckets: Record<string, number> = {
+    const counts: Record<string, number> = {
       '1': 0,
       '2-3': 0,
       '4-5': 0,
@@ -117,7 +124,8 @@ export class InMemoryAssistanceReportingService implements TownshipAssistanceRep
       );
 
       const size = application?.household?.length ?? 0;
-      let bucketKey: string = '1';
+      let bucketKey: string;
+
       if (size <= 1) {
         bucketKey = '1';
       } else if (size <= 3) {
@@ -128,14 +136,16 @@ export class InMemoryAssistanceReportingService implements TownshipAssistanceRep
         bucketKey = '6+';
       }
 
-      buckets[bucketKey] = (buckets[bucketKey] ?? 0) + 1;
+      counts[bucketKey] = (counts[bucketKey] ?? 0) + 1;
     }
 
-    return [
-      { bucketLabel: '1', caseCount: buckets['1'] },
-      { bucketLabel: '2-3', caseCount: buckets['2-3'] },
-      { bucketLabel: '4-5', caseCount: buckets['4-5'] },
-      { bucketLabel: '6+', caseCount: buckets['6+'] },
-    ];
+    const buckets: HouseholdSizeBucketStats[] = Object.entries(counts).map(
+      ([bucketLabel, caseCount]) => ({
+        bucketLabel,
+        caseCount,
+      })
+    );
+
+    return buckets;
   }
 }

@@ -1,6 +1,6 @@
 // src/core/audit/audit.types.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 
 /**
  * Severity levels for audit events.

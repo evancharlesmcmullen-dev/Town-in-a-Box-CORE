@@ -1,7 +1,7 @@
 // src/core/ai/in-memory-ai.service.ts
 
 import { randomUUID } from 'crypto';
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import { AiInteraction } from './ai.types';
 import { AiAssistantService, AiInsightsService } from './ai.service';
 

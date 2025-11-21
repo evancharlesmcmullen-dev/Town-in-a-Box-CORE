@@ -1,6 +1,6 @@
 // src/core/comms/comms.service.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import {
   OutboundChannel,
   EmailTemplate,

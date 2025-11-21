@@ -1,6 +1,6 @@
 // src/core/compliance/compliance.types.ts
 
-import { JurisdictionProfile } from '../tenancy/types';
+import { JurisdictionProfile } from '../tenancy/tenancy.types';
 
 /**
  * A reusable definition of a compliance task (e.g. "Board of Finance meeting").

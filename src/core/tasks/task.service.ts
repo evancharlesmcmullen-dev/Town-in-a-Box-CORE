@@ -1,6 +1,6 @@
 // src/core/tasks/task.service.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import { Task } from './task.types';
 
 export interface TaskService {

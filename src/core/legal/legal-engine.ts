@@ -1,4 +1,4 @@
-import { JurisdictionProfile } from '../tenancy/types';
+import { JurisdictionProfile } from '../tenancy/tenancy.types';
 import {
   ApraRuleSet,
   MeetingRuleSet,

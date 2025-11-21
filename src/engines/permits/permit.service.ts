@@ -1,6 +1,6 @@
 // src/engines/permits/permit.service.ts
 
-import { TenantContext } from '../../core/tenancy/types';
+import { TenantContext } from '../../core/tenancy/tenancy.types';
 import {
   PermitType,
   PermitApplication,

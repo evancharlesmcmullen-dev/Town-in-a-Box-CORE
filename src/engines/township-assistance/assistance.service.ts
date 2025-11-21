@@ -1,6 +1,6 @@
 // src/engines/township-assistance/assistance.service.ts
 
-import { TenantContext } from '../../core/tenancy/types';
+import { TenantContext } from '../../core/tenancy/tenancy.types';
 import {
   AssistanceProgramPolicy,
   AssistanceApplication,

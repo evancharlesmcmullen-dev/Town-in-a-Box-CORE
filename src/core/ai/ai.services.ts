@@ -1,6 +1,6 @@
 // src/core/ai/ai.service.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import { AiInteraction } from './ai.types';
 
 export interface AiAssistantService {

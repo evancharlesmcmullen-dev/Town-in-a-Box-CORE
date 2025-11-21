@@ -1,7 +1,7 @@
 // src/engines/meetings/in-memory-meetings.service.ts
 
 import { randomUUID } from 'crypto';
-import { TenantContext } from '../../core/tenancy/types';
+import { TenantContext } from '../../core/tenancy/tenancy.types';
 import {
   Meeting,
   MeetingSummary,

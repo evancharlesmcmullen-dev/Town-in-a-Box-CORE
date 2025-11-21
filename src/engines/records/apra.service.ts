@@ -1,4 +1,4 @@
-import { TenantContext } from '../../core/tenancy/types';
+import { TenantContext } from '../../core/tenancy/tenancy.types';
 import {
   ApraRequest,
   ApraRequestSummary,

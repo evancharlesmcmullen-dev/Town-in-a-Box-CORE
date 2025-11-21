@@ -1,7 +1,7 @@
 // src/engines/legislation/in-memory-legislation.service.ts
 
 import { randomUUID } from 'crypto';
-import { TenantContext } from '../../core/tenancy/types';
+import { TenantContext } from '../../core/tenancy/tenancy.types';
 import {
   LegislativeItem,
   LegislativeItemSummary,

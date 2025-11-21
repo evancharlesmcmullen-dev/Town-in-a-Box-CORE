@@ -1,6 +1,6 @@
 // src/core/compliance/compliance.seed.ts
 
-import { TenantContext, JurisdictionProfile } from '../tenancy/types';
+import { TenantContext, JurisdictionProfile } from '../tenancy/tenancy.types';
 import {
   ComplianceService,
   UpsertComplianceTaskDefinitionInput,

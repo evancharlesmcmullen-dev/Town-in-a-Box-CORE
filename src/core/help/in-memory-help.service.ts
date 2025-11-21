@@ -1,6 +1,6 @@
 // src/core/help/in-memory-help.service.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import { HelpTopic, HelpAnchor } from './help.types';
 import { HelpService } from './help.service';
 

@@ -1,6 +1,6 @@
 // src/core/compliance/compliance.service.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import {
   ComplianceTaskDefinition,
   ComplianceOccurrence,

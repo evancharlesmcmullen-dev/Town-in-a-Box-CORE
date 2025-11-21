@@ -1,6 +1,6 @@
 // src/core/identity/in-memory-identity.service.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import { IdentityService } from './identity.service';
 import { User, Role, RolePermission, UserRole } from './identity.types';
 

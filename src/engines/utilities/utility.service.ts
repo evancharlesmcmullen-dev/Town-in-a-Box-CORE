@@ -1,6 +1,6 @@
 // src/engines/utilities/utility.service.ts
 
-import { TenantContext } from '../../core/tenancy/types';
+import { TenantContext } from '../../core/tenancy/tenancy.types';
 import {
   UtilityServiceDef,
   ServiceLocation,

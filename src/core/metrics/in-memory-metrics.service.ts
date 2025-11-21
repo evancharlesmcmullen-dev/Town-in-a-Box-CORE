@@ -1,6 +1,6 @@
 // src/core/metrics/in-memory-metrics.service.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import { MetricPoint } from './metrics.types';
 import { MetricsService } from './metrics.service';
 

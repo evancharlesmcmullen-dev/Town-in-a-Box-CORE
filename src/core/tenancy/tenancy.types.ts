@@ -1,32 +1,48 @@
-// Core tenancy & jurisdiction types for Town-in-a-Box Core
+// src/core/tenancy/types.ts
 
+/**
+ * Basic state code; we’ll start with IN but support others.
+ */
 export type StateCode = 'IN' | string;
 
+/**
+ * Kind of local government unit.
+ */
 export type LocalGovKind =
   | 'town'
   | 'city'
   | 'township'
   | 'county'
-  | 'specialDistrict';
+  | 'specialDistrict'
+  | 'other';
 
+/**
+ * Profile describing the jurisdiction for a tenant.
+ */
 export interface JurisdictionProfile {
   tenantId: string;
+
   state: StateCode;
   kind: LocalGovKind;
-  name: string;             // e.g. "Town of Lapel"
+
+  name: string;             // e.g. "Town of Lapel", "Green Township"
   population?: number;
   countyName?: string;
-  formId?: string;          // e.g. 'IN_TOWN'
+
+  formId?: string;          // e.g. "IN_TOWN", "IN_TOWNSHIP"
   authorityTags: string[];  // e.g. ['zoningAuthority', 'utilityOperator']
 }
 
+/**
+ * Per-request context that all engines receive.
+ */
 export interface TenantContext {
   tenantId: string;
   jurisdiction: JurisdictionProfile;
+
   userId?: string;
   roles?: string[];
 }
-// --- Expanded tenancy config ---
 
 /**
  * A logical tenant (town, township, city, etc.).
@@ -45,8 +61,7 @@ export interface Tenant {
 }
 
 /**
- * Config for where a tenant's data lives.
- * Implementation-specific adapters will use this.
+ * Supported datastore vendors for tenant data.
  */
 export type DataStoreVendor =
   | 'postgres'
@@ -56,17 +71,21 @@ export type DataStoreVendor =
   | 'memory'
   | 'external';
 
+/**
+ * Config for where/how a tenant's data is stored.
+ * Concrete adapters will interpret this.
+ */
 export interface DataStoreConfig {
   vendor: DataStoreVendor;
   connectionString?: string;
   databaseName?: string;
 
-  // Optional config bag for adapter-specific settings.
+  // Optional adapter-specific settings.
   options?: Record<string, unknown>;
 }
 
 /**
- * High-level config tying Tenant to its datastore.
+ * Combined tenant + datastore config.
  */
 export interface TenantConfig {
   tenant: Tenant;

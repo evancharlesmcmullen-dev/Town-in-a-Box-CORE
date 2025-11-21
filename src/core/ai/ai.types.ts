@@ -1,6 +1,6 @@
 // src/core/ai/ai.types.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 
 /**
  * A basic question/answer interaction for logging/insights.

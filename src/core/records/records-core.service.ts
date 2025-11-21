@@ -1,6 +1,6 @@
 // src/core/records/records-core.service.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import {
   Record,
   RecordSummary,

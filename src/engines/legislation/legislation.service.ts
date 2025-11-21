@@ -1,6 +1,6 @@
 // src/engines/legislation/legislation.service.ts
 
-import { TenantContext } from '../../core/tenancy/types';
+import { TenantContext } from '../../core/tenancy/tenancy.types';
 import {
   LegislativeItem,
   LegislativeItemSummary,

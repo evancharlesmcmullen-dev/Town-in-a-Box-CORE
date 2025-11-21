@@ -1,7 +1,7 @@
 // src/engines/permits/in-memory-permit.service.ts
 
 import { randomUUID } from 'crypto';
-import { TenantContext } from '../../core/tenancy/types';
+import { TenantContext } from '../../core/tenancy/tenancy.types';
 import {
   PermitType,
   PermitApplication,

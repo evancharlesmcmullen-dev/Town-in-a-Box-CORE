@@ -1,7 +1,7 @@
 // src/core/comms/in-memory-comms.service.ts
 
 import { randomUUID } from 'crypto';
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import {
   OutboundChannel,
   EmailTemplate,

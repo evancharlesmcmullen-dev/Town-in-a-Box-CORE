@@ -1,6 +1,6 @@
 // src/core/cases/in-memory-case.service.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import { CaseSummary } from './case.types';
 import { CaseService } from './case.service';
 

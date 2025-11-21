@@ -1,6 +1,6 @@
 // src/core/identity/identity.service.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import { User, Role, RolePermission, UserRole } from './identity.types';
 
 export interface IdentityService {

@@ -1,7 +1,7 @@
 // src/engines/utilities/in-memory-utilities.service.ts
 
 import { randomUUID } from 'crypto';
-import { TenantContext } from '../../core/tenancy/types';
+import { TenantContext } from '../../core/tenancy/tenancy.types';
 import {
   UtilityServiceDef,
   ServiceLocation,

@@ -4,7 +4,7 @@ import { INLegalEngine } from '../states/in/legal/in-legal-engine';
 import {
   TenantContext,
   JurisdictionProfile,
-} from '../core/tenancy/types';
+} from '../core/tenancy/tenancy.types';
 import { InMemoryComplianceService } from '../core/compliance/in-memory-compliance.service';
 import { seedComplianceTasksFromLegal } from '../core/compliance/compliance.seed';
 

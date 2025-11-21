@@ -1,6 +1,6 @@
 // src/core/metrics/metrics.service.ts
 
-import { TenantContext } from '../tenancy/types';
+import { TenantContext } from '../tenancy/tenancy.types';
 import { MetricPoint } from './metrics.types';
 
 export interface MetricsService {
