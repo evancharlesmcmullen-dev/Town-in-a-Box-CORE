@@ -134,3 +134,33 @@ export interface Claim {
   // Link to payment/transaction once paid.
   transactionId?: string;
 }
+// --- FISCAL ENTITY & COST ALLOCATION ---
+
+/**
+ * A fiscal entity (civil, utility, special district, etc.).
+ */
+export interface FiscalEntity {
+  id: string;
+  tenantId: string;
+
+  name: string;
+  type: 'civil' | 'utility' | 'district' | 'other';
+}
+
+/**
+ * Simple cost allocation record for shared costs (e.g., staff time).
+ */
+export interface CostAllocation {
+  id: string;
+  tenantId: string;
+
+  fiscalEntityId: string;
+  fundId: string;
+
+  description?: string;
+  amountCents: number;
+
+  // Optional link back to source (e.g. payroll record).
+  sourceType?: string;
+  sourceId?: string;
+}
