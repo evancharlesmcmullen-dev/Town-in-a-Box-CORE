@@ -2,6 +2,7 @@
 
 import { TenantContext } from '../../core/tenancy/types';
 import {
+  AssistanceApplication,
   AssistanceBenefit,
   AssistanceCase,
   AssistanceBenefitType,
@@ -9,6 +10,7 @@ import {
 import {
   AssistanceStatsRange,
   AssistanceStatsSummary,
+  HouseholdSizeBucketStats,
 } from './assistance.reporting.types';
 import { TownshipAssistanceReportingService } from './assistance.reporting.service';
 import { InMemoryAssistanceService } from './in-memory-assistance.service';
@@ -22,12 +24,14 @@ import { TownshipAssistanceService } from './assistance.service';
 export class InMemoryAssistanceReportingService implements TownshipAssistanceReportingService {
   private cases: AssistanceCase[];
   private benefits: AssistanceBenefit[];
+  private applications: AssistanceApplication[];
 
   constructor(assistanceService: InMemoryAssistanceService | TownshipAssistanceService) {
     // Reach into the in-memory service to reuse its arrays.
     const anyService = assistanceService as any;
     this.cases = anyService.cases ?? [];
     this.benefits = anyService.benefits ?? [];
+    this.applications = anyService.applications ?? [];
   }
 
   async getStatsForRange(
@@ -37,26 +41,18 @@ export class InMemoryAssistanceReportingService implements TownshipAssistanceRep
     const inRange = (date: Date | undefined): boolean =>
       !!date && date >= range.fromDate && date <= range.toDate;
 
-    const tenantCases = this.cases.filter((c) => c.tenantId === ctx.tenantId);
+    const tenantCases = this.cases.filter(
+      (c) => c.tenantId === ctx.tenantId && inRange(c.openedAt)
+    );
     const tenantBenefits = this.benefits.filter(
       (b) => b.tenantId === ctx.tenantId && inRange(b.approvedAt)
     );
 
-    const totalCases = tenantCases.filter((c) => inRange(c.openedAt)).length;
-    const openCases = tenantCases.filter(
-      (c) => c.status === 'open' && inRange(c.openedAt)
-    ).length;
-    const approvedCases = tenantCases.filter(
-      (c) => c.status === 'approved' && inRange(c.decidedAt)
-    ).length;
-    const deniedCases = tenantCases.filter(
-      (c) => c.status === 'denied' && inRange(c.decidedAt)
-    ).length;
-    const paidCases = tenantCases.filter((c) => {
-      if (c.status !== 'paid') return false;
-      const paymentTimestamp = c.closedAt ?? c.decidedAt ?? c.openedAt;
-      return inRange(paymentTimestamp);
-    }).length;
+    const totalCases = tenantCases.length;
+    const openCases = tenantCases.filter((c) => c.status === 'open').length;
+    const approvedCases = tenantCases.filter((c) => c.status === 'approved').length;
+    const deniedCases = tenantCases.filter((c) => c.status === 'denied').length;
+    const paidCases = tenantCases.filter((c) => c.status === 'paid').length;
 
     const totalBenefitsCents = tenantBenefits.reduce(
       (sum, b) => sum + b.amountCents,
@@ -85,7 +81,9 @@ export class InMemoryAssistanceReportingService implements TownshipAssistanceRep
       })
     );
 
-    return {
+    const householdBuckets = this.buildHouseholdBuckets(ctx, tenantCases);
+
+    const summary: AssistanceStatsSummary = {
       range,
       caseStats: {
         totalCases,
@@ -96,6 +94,48 @@ export class InMemoryAssistanceReportingService implements TownshipAssistanceRep
       },
       totalBenefitsCents,
       benefitsByType,
+      householdBuckets,
     };
+
+    return summary;
+  }
+
+  private buildHouseholdBuckets(
+    ctx: TenantContext,
+    tenantCases: AssistanceCase[]
+  ): HouseholdSizeBucketStats[] {
+    const buckets: Record<string, number> = {
+      '1': 0,
+      '2-3': 0,
+      '4-5': 0,
+      '6+': 0,
+    };
+
+    for (const caseItem of tenantCases) {
+      const application = this.applications.find(
+        (a) => a.id === caseItem.applicationId && a.tenantId === ctx.tenantId
+      );
+
+      const size = application?.household?.length ?? 0;
+      let bucketKey: string = '1';
+      if (size <= 1) {
+        bucketKey = '1';
+      } else if (size <= 3) {
+        bucketKey = '2-3';
+      } else if (size <= 5) {
+        bucketKey = '4-5';
+      } else {
+        bucketKey = '6+';
+      }
+
+      buckets[bucketKey] = (buckets[bucketKey] ?? 0) + 1;
+    }
+
+    return [
+      { bucketLabel: '1', caseCount: buckets['1'] },
+      { bucketLabel: '2-3', caseCount: buckets['2-3'] },
+      { bucketLabel: '4-5', caseCount: buckets['4-5'] },
+      { bucketLabel: '6+', caseCount: buckets['6+'] },
+    ];
   }
 }
