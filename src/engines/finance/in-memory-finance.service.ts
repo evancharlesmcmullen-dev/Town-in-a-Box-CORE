@@ -1,5 +1,6 @@
 // src/engines/finance/in-memory-finance.service.ts
 
+import { randomUUID } from 'crypto';
 import { TenantContext } from '../../core/tenancy/types';
 import { FinanceService } from './finance.service';
 import {
@@ -9,6 +10,8 @@ import {
   FundBalanceSummary,
   Transaction,
   TransactionType,
+  Claim,
+  ClaimStatus,
 } from './finance.types';
 
 export interface InMemoryFinanceSeedData {
@@ -16,6 +19,7 @@ export interface InMemoryFinanceSeedData {
   accounts?: Account[];
   budgetLines?: BudgetLine[];
   transactions?: Transaction[];
+  claims?: Claim[];
 }
 
 /**
@@ -27,12 +31,14 @@ export class InMemoryFinanceService implements FinanceService {
   private accounts: Account[];
   private budgetLines: BudgetLine[];
   private transactions: Transaction[];
+  private claims: Claim[];
 
   constructor(seed: InMemoryFinanceSeedData = {}) {
     this.funds = seed.funds ? [...seed.funds] : [];
     this.accounts = seed.accounts ? [...seed.accounts] : [];
     this.budgetLines = seed.budgetLines ? [...seed.budgetLines] : [];
     this.transactions = seed.transactions ? [...seed.transactions] : [];
+    this.claims = seed.claims ? [...seed.claims] : [];
   }
 
   async listFunds(ctx: TenantContext): Promise<Fund[]> {
@@ -179,6 +185,94 @@ export class InMemoryFinanceService implements FinanceService {
       transactions: this.transactions.filter(
         (t) => t.tenantId === tenantId && t.date.getFullYear() === year
       ),
+      claims: this.claims.filter((c) => c.tenantId === tenantId),
     };
+  }
+
+  //
+  // CLAIMS
+  //
+
+  async createClaim(
+    ctx: TenantContext,
+    claimInput: Omit<Claim, 'id' | 'tenantId' | 'status' | 'createdAt'>
+  ): Promise<Claim> {
+    const now = new Date();
+    const claim: Claim = {
+      ...claimInput,
+      id: randomUUID(),
+      tenantId: ctx.tenantId,
+      status: 'draft',
+      createdAt: now,
+      createdByUserId: ctx.userId,
+    };
+
+    this.claims.push(claim);
+    return claim;
+  }
+
+  async listClaims(
+    ctx: TenantContext,
+    options: {
+      status?: ClaimStatus;
+      fundId?: string;
+      accountId?: string;
+    } = {}
+  ): Promise<Claim[]> {
+    let results = this.claims.filter((c) => c.tenantId === ctx.tenantId);
+
+    if (options.status) {
+      results = results.filter((c) => c.status === options.status);
+    }
+
+    if (options.fundId) {
+      results = results.filter((c) => c.fundId === options.fundId);
+    }
+
+    if (options.accountId) {
+      results = results.filter((c) => c.accountId === options.accountId);
+    }
+
+    return results;
+  }
+
+  async updateClaimStatus(
+    ctx: TenantContext,
+    id: string,
+    newStatus: ClaimStatus
+  ): Promise<Claim> {
+    const claim = this.claims.find(
+      (c) => c.id === id && c.tenantId === ctx.tenantId
+    );
+
+    if (!claim) {
+      throw new Error('Claim not found for tenant');
+    }
+
+    const now = new Date();
+    claim.status = newStatus;
+
+    if (newStatus === 'submitted') {
+      claim.submittedAt = claim.submittedAt ?? now;
+    }
+
+    if (newStatus === 'approved') {
+      claim.submittedAt = claim.submittedAt ?? now;
+      claim.approvedAt = claim.approvedAt ?? now;
+      claim.rejectedAt = undefined;
+    }
+
+    if (newStatus === 'rejected') {
+      claim.rejectedAt = claim.rejectedAt ?? now;
+      claim.approvedAt = undefined;
+    }
+
+    if (newStatus === 'paid') {
+      claim.submittedAt = claim.submittedAt ?? now;
+      claim.approvedAt = claim.approvedAt ?? now;
+      claim.paidAt = claim.paidAt ?? now;
+    }
+
+    return claim;
   }
 }

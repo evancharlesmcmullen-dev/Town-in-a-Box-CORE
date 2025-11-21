@@ -8,6 +8,8 @@ import {
   Transaction,
   FundBalanceSummary,
   TransactionType,
+  Claim,
+  ClaimStatus,
 } from './finance.types';
 
 /**
@@ -75,6 +77,40 @@ export interface FinanceService {
   ): Promise<FundBalanceSummary[]>;
 
   //
+  // CLAIMS
+  //
+
+  /**
+   * Create a new claim/voucher for an expenditure to be examined by the Trustee.
+   */
+  createClaim(
+    ctx: TenantContext,
+    claim: Omit<Claim, 'id' | 'tenantId' | 'status' | 'createdAt'>
+  ): Promise<Claim>;
+
+  /**
+   * List claims, optionally filtered by status, fund, or account.
+   */
+  listClaims(
+    ctx: TenantContext,
+    options?: {
+      status?: ClaimStatus;
+      fundId?: string;
+      accountId?: string;
+    }
+  ): Promise<Claim[]>;
+
+  /**
+   * Update the status of a claim (e.g., submit, approve, reject, mark paid).
+   * Implementations will set the appropriate timestamps.
+   */
+  updateClaimStatus(
+    ctx: TenantContext,
+    id: string,
+    newStatus: ClaimStatus
+  ): Promise<Claim>;
+
+  //
   // EXPORTS
   //
 
@@ -89,3 +125,4 @@ export interface FinanceService {
     year: number
   ): Promise<unknown>;
 }
+

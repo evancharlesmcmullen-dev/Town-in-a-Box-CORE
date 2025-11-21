@@ -3,6 +3,8 @@ import {
   ApraRuleSet,
   MeetingRuleSet,
   PlanningRuleSet,
+  AssistanceRuleSet,
+  ComplianceTaskTemplate
 } from './types';
 
 // Interface every state-specific legal engine must implement.
@@ -14,6 +16,8 @@ export interface LegalEngine {
   getApraRules(j: JurisdictionProfile): ApraRuleSet;
   getMeetingsRules(j: JurisdictionProfile): MeetingRuleSet;
   getPlanningRules(j: JurisdictionProfile): PlanningRuleSet;
+  getAssistanceRules(j: JurisdictionProfile): AssistanceRuleSet;
+  getComplianceTaskTemplates(j: JurisdictionProfile): ComplianceTaskTemplate[];
 
   // As we expand, we'll add:
   // getFinanceRules(j: JurisdictionProfile): FinanceRuleSet;

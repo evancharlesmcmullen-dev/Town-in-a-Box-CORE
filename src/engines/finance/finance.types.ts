@@ -94,3 +94,43 @@ export interface FundBalanceSummary {
   actualExpenseCents: number;
   estimatedEndingBalanceCents: number;
 }
+
+// --- CLAIMS / VOUCHERS ---
+
+export type ClaimStatus =
+  | 'draft'
+  | 'submitted'
+  | 'approved'
+  | 'rejected'
+  | 'paid';
+
+/**
+ * A claim/voucher representing a proposed expenditure to be examined by the Trustee
+ * and optionally by the Board.
+ */
+export interface Claim {
+  id: string;
+  tenantId: string;
+  fiscalEntityId: string;
+  fundId: string;
+  accountId: string;
+
+  // For now we keep a simple vendor/payee string; later this can reference a Vendor entity.
+  payeeName: string;
+  description: string;
+
+  amountCents: number;
+
+  status: ClaimStatus;
+
+  createdAt: Date;
+  createdByUserId?: string;
+
+  submittedAt?: Date;
+  approvedAt?: Date;
+  rejectedAt?: Date;
+  paidAt?: Date;
+
+  // Link to payment/transaction once paid.
+  transactionId?: string;
+}
