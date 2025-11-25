@@ -35,5 +35,18 @@ export interface PlanningRuleSet {
   caseTypes: string[];        // e.g. 'USE_VARIANCE', 'REZONE', 'PLAT'
   findingsTemplates: TemplateDescriptor[];
 }
+// Assistance rules (township poor relief).
+export interface AssistanceRuleSet {
+  decisionDeadlineHours?: number;   // e.g. 72 hours for emergency cases
+  requiresWrittenStandards: boolean;
+}
 
+// Compliance task definition template, to be materialized per tenant.
+export interface ComplianceTaskTemplate {
+  code: string;
+  name: string;
+  description?: string;
+  statutoryCitation?: string;
+  recurrenceHint?: string;          // "annual in January", etc.
+}
 // Later we’ll extend this file with FinanceRuleSet, UtilitiesRuleSet, etc.
