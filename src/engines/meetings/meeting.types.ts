@@ -101,10 +101,26 @@ export interface MeetingNotice {
 }
 
 /**
+ * Timeliness status for Open Door Law compliance.
+ */
+export type OpenDoorTimeliness = 'COMPLIANT' | 'LATE' | 'UNKNOWN';
+
+/**
  * Open Door Law compliance status for a meeting.
+ *
+ * Per IC 5-14-1.5-5, notice must be posted "at least 48 hours
+ * (excluding Saturdays, Sundays, and legal holidays)" before the meeting.
  */
 export interface OpenDoorCompliance {
-  hasTimelyNotice: boolean;
+  /** Overall compliance status. */
+  timeliness: OpenDoorTimeliness;
+  /** When notice should have been posted by (ISO 8601). */
+  requiredPostedBy?: string;
+  /** When notice was actually posted (ISO 8601). */
+  actualPostedAt?: string;
+  /** Additional notes (e.g., "Emergency meeting - different rules apply"). */
+  notes?: string;
+  /** When this compliance check was last performed. */
   lastCheckedAt: Date;
 }
 

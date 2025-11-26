@@ -103,6 +103,9 @@ export interface HouseholdSizeBucketStats {
  * - Trustee dashboard with charts
  * - Board presentation summaries
  *
+ * **Invariant:** Sum of `householdBuckets[*].caseCount` must equal
+ * `caseStats.totalCases`. Implementations should ensure this holds.
+ *
  * **Note:** `householdBuckets` is required. If you need a lightweight
  * summary without buckets (e.g., for a "glance card"), use
  * {@link AssistanceStatsSummaryLite} instead.

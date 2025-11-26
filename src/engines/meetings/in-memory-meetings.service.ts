@@ -164,13 +164,18 @@ export class InMemoryMeetingsService implements MeetingsService {
       throw new Error('Meeting not found for tenant');
     }
 
+    // Idempotent: if already cancelled, return as-is
     if (meeting.status === 'cancelled') {
-      throw new Error('Meeting is already cancelled');
+      return meeting;
     }
 
     if (meeting.status === 'adjourned') {
       throw new Error('Cannot cancel an adjourned meeting');
     }
+
+    // Note: If meeting.status is 'inSession', this is a retroactive cancellation.
+    // The audit trail (cancelledAt timestamp) will reflect when the cancellation
+    // was recorded, not when the meeting was supposed to occur.
 
     meeting.status = 'cancelled';
     meeting.cancelledAt = new Date();
@@ -207,11 +212,20 @@ export class InMemoryMeetingsService implements MeetingsService {
       input.requiredLeadTimeHours ?? (meeting.type === 'emergency' ? 0 : 48);
 
     // Calculate if notice is timely
+    // NOTE: This is a simplified calculation using calendar hours.
+    // IC 5-14-1.5-5 actually requires "48 hours excluding Saturdays, Sundays,
+    // and legal holidays." A production implementation should use a proper
+    // business-day calculation that accounts for weekends and Indiana holidays.
     const msDiff =
       meeting.scheduledStart.getTime() - input.postedAt.getTime();
     const hoursDiff = msDiff / (1000 * 60 * 60);
     const isTimely =
       hoursDiff >= requiredLeadTimeHours || meeting.type === 'emergency';
+
+    // Calculate when notice should have been posted (simple calendar hours)
+    const requiredPostedByMs =
+      meeting.scheduledStart.getTime() - requiredLeadTimeHours * 60 * 60 * 1000;
+    const requiredPostedBy = new Date(requiredPostedByMs).toISOString();
 
     const notice: MeetingNotice = {
       id: randomUUID(),
@@ -230,9 +244,20 @@ export class InMemoryMeetingsService implements MeetingsService {
     meeting.notices = [...(meeting.notices ?? []), notice];
     meeting.lastNoticePostedAt = input.postedAt;
 
-    // Update compliance tracking
+    // Update compliance tracking with enriched structure
+    const timeliness = meeting.type === 'emergency'
+      ? 'COMPLIANT' as const
+      : isTimely
+        ? 'COMPLIANT' as const
+        : 'LATE' as const;
+
     meeting.openDoorCompliance = {
-      hasTimelyNotice: isTimely,
+      timeliness,
+      requiredPostedBy,
+      actualPostedAt: input.postedAt.toISOString(),
+      notes: meeting.type === 'emergency'
+        ? 'Emergency meeting - standard 48-hour rule does not apply'
+        : undefined,
       lastCheckedAt: new Date(),
     };
 
