@@ -90,6 +90,9 @@ export interface Meeting {
 
   noticePostedAt?: Date;      // when notice was actually posted
   noticeId?: string;          // link into Notice engine later
+
+  cancelledAt?: Date;         // when meeting was cancelled (if status=cancelled)
+  cancellationReason?: string; // optional reason for cancellation
 }
 
 /**

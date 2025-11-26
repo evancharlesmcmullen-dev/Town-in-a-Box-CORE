@@ -79,9 +79,18 @@ export interface MeetingsService {
     vote: VoteRecord
   ): Promise<void>;
 
+  /**
+   * Cancel a scheduled meeting.
+   * @param reason Optional reason for the cancellation.
+   */
+  cancelMeeting(
+    ctx: TenantContext,
+    meetingId: string,
+    reason?: string
+  ): Promise<Meeting>;
+
   // Later we can add:
   // - attachAgenda(...)
   // - attachRecording(...)
-  // - cancelMeeting(...)
   // - markNoticePosted(...)
 }

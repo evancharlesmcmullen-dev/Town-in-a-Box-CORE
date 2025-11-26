@@ -148,4 +148,34 @@ export class InMemoryMeetingsService implements MeetingsService {
 
     this.votes.push(vote.id ? vote : { ...vote, id: randomUUID() });
   }
+
+  async cancelMeeting(
+    ctx: TenantContext,
+    meetingId: string,
+    reason?: string
+  ): Promise<Meeting> {
+    const meeting = this.meetings.find(
+      (m) => m.id === meetingId && m.tenantId === ctx.tenantId
+    );
+
+    if (!meeting) {
+      throw new Error('Meeting not found for tenant');
+    }
+
+    if (meeting.status === 'cancelled') {
+      throw new Error('Meeting is already cancelled');
+    }
+
+    if (meeting.status === 'adjourned') {
+      throw new Error('Cannot cancel an adjourned meeting');
+    }
+
+    meeting.status = 'cancelled';
+    meeting.cancelledAt = new Date();
+    if (reason) {
+      meeting.cancellationReason = reason;
+    }
+
+    return meeting;
+  }
 }
