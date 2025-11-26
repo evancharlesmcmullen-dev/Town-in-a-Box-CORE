@@ -1,11 +1,13 @@
-// src/db/tenant-aware-db.ts
+// ============================================
+// File: src/db/tenant-aware-db.ts
+// ============================================
 
 import { Pool, PoolClient } from 'pg';
 
 /**
  * TenantAwareDb wraps a pg.Pool and ensures that, for every operation,
  * PostgreSQL Row Level Security (RLS) is given the correct tenant context
- * via the app.current_tenant_id setting.
+ * via the `app.current_tenant_id` setting.
  *
  * All Postgres-backed services should use this instead of using Pool directly.
  */
