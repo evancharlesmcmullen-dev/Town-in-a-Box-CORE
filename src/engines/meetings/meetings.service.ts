@@ -106,7 +106,11 @@ export interface MeetingsService {
 
   /**
    * Record that public notice has been posted for a meeting.
-   * Evaluates Open Door Law compliance (48-hour rule for regular meetings).
+   *
+   * Evaluates Open Door Law compliance per IC 5-14-1.5-5:
+   * - Regular meetings require 48 business hours notice (excluding
+   *   Saturdays, Sundays, and Indiana state holidays)
+   * - Emergency meetings are exempt from the 48-hour requirement
    */
   markNoticePosted(
     ctx: TenantContext,

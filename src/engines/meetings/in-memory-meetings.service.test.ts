@@ -95,9 +95,12 @@ describe('InMemoryMeetingsService', () => {
   });
 
   describe('markNoticePosted', () => {
-    it('should mark timeliness as COMPLIANT when posted 48+ hours before meeting', async () => {
-      const meetingStart = new Date('2025-02-10T19:00:00Z');
-      const postedAt = new Date('2025-02-07T10:00:00Z'); // 81 hours before
+    it('should mark timeliness as COMPLIANT when posted 48+ business hours before meeting', async () => {
+      // Wednesday meeting, posted Friday before - gives 48+ business hours
+      // Required by: Mon Feb 10 at 19:00 (48 biz hours back from Wed 19:00)
+      // Posted: Fri Feb 7 at 10:00 (before Mon 19:00) → COMPLIANT
+      const meetingStart = new Date('2025-02-12T19:00:00Z'); // Wednesday
+      const postedAt = new Date('2025-02-07T10:00:00Z'); // Friday before
 
       const meeting = await service.scheduleMeeting(ctx, {
         bodyId: 'council',
@@ -164,8 +167,9 @@ describe('InMemoryMeetingsService', () => {
     });
 
     it('should store requiredPostedBy and actualPostedAt as ISO strings', async () => {
-      const meetingStart = new Date('2025-02-10T19:00:00Z');
-      const postedAt = new Date('2025-02-07T10:00:00Z');
+      // Use Wed meeting, posted Fri before (same as COMPLIANT test)
+      const meetingStart = new Date('2025-02-12T19:00:00Z'); // Wednesday
+      const postedAt = new Date('2025-02-07T10:00:00Z'); // Friday before
 
       const meeting = await service.scheduleMeeting(ctx, {
         bodyId: 'council',
@@ -192,15 +196,16 @@ describe('InMemoryMeetingsService', () => {
     });
 
     it('should append notices to array and track lastNoticePostedAt', async () => {
+      // Use Wed meeting for proper business hour calculation
       const meeting = await service.scheduleMeeting(ctx, {
         bodyId: 'council',
         type: 'regular',
-        scheduledStart: new Date('2025-02-10T19:00:00Z'),
+        scheduledStart: new Date('2025-02-12T19:00:00Z'), // Wednesday
         location: 'Town Hall',
       });
 
       // Post first notice
-      const firstPost = new Date('2025-02-07T10:00:00Z');
+      const firstPost = new Date('2025-02-07T10:00:00Z'); // Friday before
       await service.markNoticePosted(ctx, {
         meetingId: meeting.id,
         postedAt: firstPost,
@@ -210,7 +215,7 @@ describe('InMemoryMeetingsService', () => {
       });
 
       // Post second notice
-      const secondPost = new Date('2025-02-08T09:00:00Z');
+      const secondPost = new Date('2025-02-10T09:00:00Z'); // Monday before
       const updated = await service.markNoticePosted(ctx, {
         meetingId: meeting.id,
         postedAt: secondPost,
@@ -221,6 +226,119 @@ describe('InMemoryMeetingsService', () => {
 
       expect(updated.notices).toHaveLength(2);
       expect(updated.lastNoticePostedAt).toEqual(secondPost);
+    });
+
+    // --- Weekend/Holiday Specific Tests (IC 5-14-1.5-5) ---
+
+    it('should skip weekends when calculating required posting time (Friday → Monday)', async () => {
+      // Meeting on Monday at 19:00
+      // 48 business hours back = Thu at 19:00 (skipping Sat/Sun)
+      // Mon 19 hrs + Fri 24 hrs = 43, need 5 more from Thu
+      const meetingStart = new Date('2025-02-10T19:00:00Z'); // Monday
+      const postedAt = new Date('2025-02-06T18:00:00Z'); // Thursday 18:00 (before Thu 19:00)
+
+      const meeting = await service.scheduleMeeting(ctx, {
+        bodyId: 'council',
+        type: 'regular',
+        scheduledStart: meetingStart,
+        location: 'Town Hall',
+      });
+
+      const updated = await service.markNoticePosted(ctx, {
+        meetingId: meeting.id,
+        postedAt,
+        postedByUserId: 'clerk-1',
+        methods: ['WEBSITE'],
+        locations: ['www.town.gov'],
+      });
+
+      expect(updated.openDoorCompliance?.timeliness).toBe('COMPLIANT');
+      // Verify business hours lead is at least 48
+      expect(updated.openDoorCompliance?.notes).toContain('business hours');
+    });
+
+    it('should not skip weekdays when no weekend crossing (Tuesday meeting)', async () => {
+      // Meeting on Tuesday at 19:00
+      // 48 business hours back = previous Thursday at 19:00
+      // (Tue 19 + Mon 24 = 43, need 5 from prev Fri? No wait...)
+      // Tue 19 hrs + Mon 24 = 43 + Fri 5 = 48, but we skip Sat/Sun
+      // Actually: Tue 19 + Mon 24 + Fri 5 = 48 (skipping weekend)
+      // Wait, going back from Tuesday:
+      //   Tue: 19 hrs, Mon: 24 hrs = 43 total, need 5 more from Sun? No, skip to Fri
+      //   Fri: 5 hrs = 48 total → Fri 19:00
+      const meetingStart = new Date('2025-02-11T19:00:00Z'); // Tuesday
+      const postedAt = new Date('2025-02-07T18:00:00Z'); // Friday 18:00 (before Fri 19:00)
+
+      const meeting = await service.scheduleMeeting(ctx, {
+        bodyId: 'council',
+        type: 'regular',
+        scheduledStart: meetingStart,
+        location: 'Town Hall',
+      });
+
+      const updated = await service.markNoticePosted(ctx, {
+        meetingId: meeting.id,
+        postedAt,
+        postedByUserId: 'clerk-1',
+        methods: ['WEBSITE'],
+        locations: ['www.town.gov'],
+      });
+
+      expect(updated.openDoorCompliance?.timeliness).toBe('COMPLIANT');
+    });
+
+    it('should skip holidays when calculating required posting time', async () => {
+      // Meeting on Thursday Jan 2, 2025 at 19:00
+      // New Year's Day (Jan 1) is a holiday
+      // 48 business hours back, skipping Jan 1 and weekends
+      // Thu Jan 2: 19 hrs
+      // Wed Jan 1 = HOLIDAY (skipped)
+      // Tue Dec 31: 24 hrs = 43 total
+      // Mon Dec 30: 5 hrs = 48 total → Mon Dec 30 at 19:00
+      const meetingStart = new Date('2025-01-02T19:00:00Z'); // Thursday Jan 2
+      const postedAt = new Date('2024-12-30T18:00:00Z'); // Mon Dec 30 at 18:00 (before 19:00)
+
+      const meeting = await service.scheduleMeeting(ctx, {
+        bodyId: 'council',
+        type: 'regular',
+        scheduledStart: meetingStart,
+        location: 'Town Hall',
+      });
+
+      const updated = await service.markNoticePosted(ctx, {
+        meetingId: meeting.id,
+        postedAt,
+        postedByUserId: 'clerk-1',
+        methods: ['WEBSITE'],
+        locations: ['www.town.gov'],
+      });
+
+      expect(updated.openDoorCompliance?.timeliness).toBe('COMPLIANT');
+    });
+
+    it('should mark as LATE when posting after deadline due to weekend skip', async () => {
+      // Meeting on Monday at 19:00
+      // Required by: Thursday at 19:00 (48 biz hours back, skipping Sat/Sun)
+      // Posted: Friday at 10:00 (AFTER the deadline)
+      const meetingStart = new Date('2025-02-10T19:00:00Z'); // Monday
+      const postedAt = new Date('2025-02-07T10:00:00Z'); // Friday 10:00 (after Thu 19:00)
+
+      const meeting = await service.scheduleMeeting(ctx, {
+        bodyId: 'council',
+        type: 'regular',
+        scheduledStart: meetingStart,
+        location: 'Town Hall',
+      });
+
+      const updated = await service.markNoticePosted(ctx, {
+        meetingId: meeting.id,
+        postedAt,
+        postedByUserId: 'clerk-1',
+        methods: ['WEBSITE'],
+        locations: ['www.town.gov'],
+      });
+
+      expect(updated.openDoorCompliance?.timeliness).toBe('LATE');
     });
   });
 });

@@ -17,6 +17,10 @@ import {
   MeetingFilter,
   MarkNoticePostedInput,
 } from './meetings.service';
+import {
+  checkOpenDoorCompliance,
+  getIndianaStateHolidays,
+} from '../../core/calendar/open-door.calendar';
 
 export interface InMemoryMeetingsSeedData {
   meetings?: Meeting[];
@@ -204,26 +208,41 @@ export class InMemoryMeetingsService implements MeetingsService {
       throw new Error('Cannot post notice for an adjourned meeting');
     }
 
-    // Default to 48-hour requirement per Indiana Open Door Law (IC 5-14-1.5-5)
-    // Emergency meetings have different rules and can override this
-    const requiredLeadTimeHours =
-      input.requiredLeadTimeHours ?? (meeting.type === 'emergency' ? 0 : 48);
+    // Calculate compliance per Indiana Open Door Law (IC 5-14-1.5-5)
+    // "at least 48 hours (excluding Saturdays, Sundays, and legal holidays)"
+    let requiredPostedBy: Date;
+    let isTimely: boolean;
+    let businessHoursLead: number;
 
-    // Calculate if notice is timely
-    // NOTE: This is a simplified calculation using calendar hours.
-    // IC 5-14-1.5-5 actually requires "48 hours excluding Saturdays, Sundays,
-    // and legal holidays." A production implementation should use a proper
-    // business-day calculation that accounts for weekends and Indiana holidays.
-    const msDiff =
-      meeting.scheduledStart.getTime() - input.postedAt.getTime();
-    const hoursDiff = msDiff / (1000 * 60 * 60);
-    const isTimely =
-      hoursDiff >= requiredLeadTimeHours || meeting.type === 'emergency';
+    if (meeting.type === 'emergency') {
+      // Emergency meetings: IC 5-14-1.5-5(d) exempts from 48-hour rule
+      // Notice should be posted "as soon as possible"
+      requiredPostedBy = meeting.scheduledStart;
+      isTimely = true;
+      businessHoursLead = 0;
+    } else {
+      // Get Indiana state holidays for the relevant year(s)
+      const meetingYear = meeting.scheduledStart.getFullYear();
+      const postedYear = input.postedAt.getFullYear();
+      const holidays = [
+        ...getIndianaStateHolidays(meetingYear),
+        ...(postedYear !== meetingYear ? getIndianaStateHolidays(postedYear) : []),
+      ];
 
-    // Calculate when notice should have been posted (simple calendar hours)
-    const requiredPostedByMs =
-      meeting.scheduledStart.getTime() - requiredLeadTimeHours * 60 * 60 * 1000;
-    const requiredPostedBy = new Date(requiredPostedByMs).toISOString();
+      // Check compliance using business hours calculation
+      const compliance = checkOpenDoorCompliance(
+        meeting.scheduledStart,
+        input.postedAt,
+        { holidays }
+      );
+
+      requiredPostedBy = compliance.requiredPostedBy;
+      isTimely = compliance.isTimely;
+      businessHoursLead = compliance.businessHoursLead;
+    }
+
+    // Legacy field for backward compatibility (simple calendar hours)
+    const requiredLeadTimeHours = input.requiredLeadTimeHours ?? 48;
 
     const notice: MeetingNotice = {
       id: randomUUID(),
@@ -243,19 +262,13 @@ export class InMemoryMeetingsService implements MeetingsService {
     meeting.lastNoticePostedAt = input.postedAt;
 
     // Update compliance tracking with enriched structure
-    const timeliness = meeting.type === 'emergency'
-      ? 'COMPLIANT' as const
-      : isTimely
-        ? 'COMPLIANT' as const
-        : 'LATE' as const;
-
     meeting.openDoorCompliance = {
-      timeliness,
-      requiredPostedBy,
+      timeliness: isTimely ? 'COMPLIANT' : 'LATE',
+      requiredPostedBy: requiredPostedBy.toISOString(),
       actualPostedAt: input.postedAt.toISOString(),
       notes: meeting.type === 'emergency'
-        ? 'Emergency meeting - standard 48-hour rule does not apply'
-        : undefined,
+        ? 'Emergency meeting - notice posted as soon as possible per IC 5-14-1.5-5(d)'
+        : `${businessHoursLead} business hours lead time (48 required)`,
       lastCheckedAt: new Date(),
     };
 
