@@ -111,41 +111,55 @@ export class InMemoryAssistanceReportingService
     ctx: TenantContext,
     tenantCases: AssistanceCase[]
   ): HouseholdSizeBucketStats[] {
-    const counts: Record<string, number> = {
-      '1': 0,
-      '2-3': 0,
-      '4-5': 0,
-      '6+': 0,
-    };
+    // Define bucket structure with ranges
+    const bucketDefs: Array<{
+      label: string;
+      minSize: number;
+      maxSize: number | null;
+    }> = [
+      { label: '1', minSize: 1, maxSize: 1 },
+      { label: '2-3', minSize: 2, maxSize: 3 },
+      { label: '4-5', minSize: 4, maxSize: 5 },
+      { label: '6+', minSize: 6, maxSize: null },
+    ];
+
+    const bucketStats: Record<
+      string,
+      { caseCount: number; approvedCount: number; deniedCount: number }
+    > = {};
+
+    for (const def of bucketDefs) {
+      bucketStats[def.label] = { caseCount: 0, approvedCount: 0, deniedCount: 0 };
+    }
 
     for (const caseItem of tenantCases) {
       const application = this.applications.find(
         (a) => a.id === caseItem.applicationId && a.tenantId === ctx.tenantId
       );
 
-      const size = application?.household?.length ?? 0;
-      let bucketKey: string;
+      const size = application?.household?.length ?? 1;
 
-      if (size <= 1) {
-        bucketKey = '1';
-      } else if (size <= 3) {
-        bucketKey = '2-3';
-      } else if (size <= 5) {
-        bucketKey = '4-5';
-      } else {
-        bucketKey = '6+';
+      // Find matching bucket
+      const bucket = bucketDefs.find(
+        (b) => size >= b.minSize && (b.maxSize === null || size <= b.maxSize)
+      );
+      const bucketLabel = bucket?.label ?? '1';
+
+      bucketStats[bucketLabel].caseCount += 1;
+      if (caseItem.status === 'approved' || caseItem.status === 'paid') {
+        bucketStats[bucketLabel].approvedCount += 1;
+      } else if (caseItem.status === 'denied') {
+        bucketStats[bucketLabel].deniedCount += 1;
       }
-
-      counts[bucketKey] = (counts[bucketKey] ?? 0) + 1;
     }
 
-    const buckets: HouseholdSizeBucketStats[] = Object.entries(counts).map(
-      ([bucketLabel, caseCount]) => ({
-        bucketLabel,
-        caseCount,
-      })
-    );
-
-    return buckets;
+    return bucketDefs.map((def) => ({
+      bucketLabel: def.label,
+      minSize: def.minSize,
+      maxSize: def.maxSize,
+      caseCount: bucketStats[def.label].caseCount,
+      approvedCount: bucketStats[def.label].approvedCount,
+      deniedCount: bucketStats[def.label].deniedCount,
+    }));
   }
 }

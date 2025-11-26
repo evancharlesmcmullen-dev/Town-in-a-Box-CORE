@@ -53,13 +53,50 @@ export interface FeeSchedule {
   feeItemIds: string[];        // FeeItem ids included in this schedule
 }
 
+// ---------------------------------------------------------------------------
+// Fee Calculation Input
+// ---------------------------------------------------------------------------
+
+/**
+ * A single parameter for fee calculation.
+ */
+export interface FeeCalculationParameter {
+  key: string;                  // fee item code, e.g. "WATER_TAP_3_4", "sq_ft"
+  value: number;                // quantity/multiplier
+}
+
+/**
+ * Context for audit logs and legal defensibility.
+ */
+export interface FeeCalculationContext {
+  applicantName?: string;
+  parcelId?: string;
+  caseNumber?: string;
+  permitNumber?: string;
+  submittedAt?: string;         // ISO date string
+}
+
 /**
  * Input for calculating fees.
  */
 export interface FeeCalculationInput {
-  feeScheduleId?: string;      // optional: use specific schedule
-  parameters: Record<string, number>; // quantity/multiplier by fee item code
+  feeScheduleId?: string;       // optional: use specific schedule
+
+  /**
+   * Parameters keyed by fee item code.
+   * Value is the quantity/multiplier for that fee item.
+   */
+  parameters: Record<string, number>;
+
+  /**
+   * Optional context for audit trail and reporting.
+   */
+  context?: FeeCalculationContext;
 }
+
+// ---------------------------------------------------------------------------
+// Fee Calculation Result
+// ---------------------------------------------------------------------------
 
 /**
  * A single calculated line in a fee computation (e.g. "10 EDUs x $500 per EDU = $5,000").
@@ -75,12 +112,31 @@ export interface FeeCalculationLine {
 }
 
 /**
+ * A discount or adjustment line.
+ */
+export interface FeeDiscountLine {
+  code: string;
+  description: string;
+  amountCents: number;         // positive value = reduction
+  reason?: string;
+}
+
+/**
  * Result of a fee calculation for a particular case/action.
  */
 export interface FeeCalculationResult {
   tenantId: string;
   scheduleId: string | null;   // which schedule was used, if any
+
   lines: FeeCalculationLine[];
-  totalCents: number;
-  currency: string;            // e.g. "USD"
+  subtotalCents: number;       // sum of lines before discounts
+
+  discounts?: FeeDiscountLine[];
+  totalDiscountCents?: number;
+
+  totalCents: number;          // final amount due
+  currency: 'USD';             // locked to USD for now
+
+  calculatedAt: Date;
+  context?: FeeCalculationContext; // echoed back for audit
 }

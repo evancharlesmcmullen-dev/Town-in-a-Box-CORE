@@ -34,8 +34,12 @@ export interface AssistanceBenefitBreakdown {
  * Household size bucket stats for TA-7 reporting.
  */
 export interface HouseholdSizeBucketStats {
-  bucketLabel: string;    // e.g. "1", "2-3", "4-5", "6+"
+  bucketLabel: string;     // e.g. "1", "2-3", "4-5", "6+"
+  minSize: number;         // e.g. 1
+  maxSize: number | null;  // e.g. 3, or null for open-ended "6+"
   caseCount: number;
+  approvedCount: number;
+  deniedCount: number;
 }
 
 /**
@@ -49,5 +53,11 @@ export interface AssistanceStatsSummary {
   totalBenefitsCents: number;
   benefitsByType: AssistanceBenefitBreakdown[];
 
-  householdBuckets?: HouseholdSizeBucketStats[];
+  householdBuckets: HouseholdSizeBucketStats[];
 }
+
+/**
+ * Lightweight summary without household breakdown (for quick dashboards).
+ */
+export interface AssistanceStatsSummaryLite
+  extends Omit<AssistanceStatsSummary, 'householdBuckets'> {}

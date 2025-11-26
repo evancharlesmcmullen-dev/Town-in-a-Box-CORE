@@ -112,17 +112,23 @@ export class InMemoryFeeService implements FeeService {
       };
     });
 
-    const totalCents = lines.reduce(
+    const subtotalCents = lines.reduce(
       (sum, line) => sum + line.lineTotalCents,
       0
     );
+
+    // No discounts in this simple implementation
+    const totalCents = subtotalCents;
 
     const result: FeeCalculationResult = {
       tenantId,
       scheduleId: input.feeScheduleId ?? null,
       lines,
+      subtotalCents,
       totalCents,
       currency: 'USD',
+      calculatedAt: new Date(),
+      context: input.context,
     };
 
     return result;
