@@ -149,6 +149,32 @@ export interface Meeting {
 
   cancelledAt?: Date;         // when meeting was cancelled (if status=cancelled)
   cancellationReason?: string; // optional reason for cancellation
+
+  // AI-generated content
+  aiCouncilSummary?: string;           // AI-generated summary for council packet
+  aiSummaryGeneratedAt?: string;       // ISO 8601 timestamp
+  aiExtractedDeadlines?: MeetingDeadline[];  // Deadlines extracted from agenda/packet
+}
+
+/**
+ * A deadline extracted from meeting materials by AI.
+ * Requires human review before being treated as authoritative.
+ */
+export interface MeetingDeadline {
+  id: string;
+  meetingId: string;
+  /** Brief description of the deadline. */
+  label: string;
+  /** Due date (ISO 8601 date string, e.g., "2025-02-15"). */
+  dueDate: string;
+  /** AI confidence in this extraction (0-1). */
+  confidence?: number;
+  /** Has a human reviewed and confirmed this deadline? */
+  reviewedByUserId?: string;
+  /** When the deadline was confirmed (or rejected). */
+  reviewedAt?: string;
+  /** Was the deadline confirmed as accurate? */
+  isConfirmed?: boolean;
 }
 
 /**

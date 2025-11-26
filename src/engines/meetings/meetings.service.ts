@@ -10,6 +10,7 @@ import {
   MeetingType,
   MeetingStatus,
   NoticeMethod,
+  MeetingDeadline,
 } from './meeting.types';
 
 // Input for scheduling a meeting.
@@ -115,4 +116,49 @@ export interface MeetingsService {
   // Later we can add:
   // - attachAgenda(...)
   // - attachRecording(...)
+}
+
+/**
+ * AI-enhanced meetings service interface.
+ *
+ * Extends base MeetingsService with AI-powered features.
+ * Implementations require an AiExtractionService dependency.
+ */
+export interface AiMeetingsService extends MeetingsService {
+  /**
+   * Generate an AI summary of the meeting for council/board packets.
+   *
+   * @param agendaText - The agenda/packet text to summarize
+   * @returns The updated meeting with aiCouncilSummary populated
+   */
+  generateCouncilSummary(
+    ctx: TenantContext,
+    meetingId: string,
+    agendaText: string
+  ): Promise<Meeting>;
+
+  /**
+   * Scan meeting materials for deadlines using AI.
+   *
+   * Extracted deadlines are stored on the meeting with isConfirmed=false,
+   * requiring human review before being treated as authoritative.
+   *
+   * @param packetText - Meeting packet/agenda text to scan
+   * @returns The updated meeting with aiExtractedDeadlines populated
+   */
+  scanForDeadlines(
+    ctx: TenantContext,
+    meetingId: string,
+    packetText: string
+  ): Promise<Meeting>;
+
+  /**
+   * Confirm or reject an AI-extracted deadline after human review.
+   */
+  reviewDeadline(
+    ctx: TenantContext,
+    meetingId: string,
+    deadlineId: string,
+    isConfirmed: boolean
+  ): Promise<Meeting>;
 }
