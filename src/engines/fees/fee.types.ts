@@ -54,6 +54,14 @@ export interface FeeSchedule {
 }
 
 /**
+ * Input for calculating fees.
+ */
+export interface FeeCalculationInput {
+  feeScheduleId?: string;      // optional: use specific schedule
+  parameters: Record<string, number>; // quantity/multiplier by fee item code
+}
+
+/**
  * A single calculated line in a fee computation (e.g. "10 EDUs x $500 per EDU = $5,000").
  */
 export interface FeeCalculationLine {

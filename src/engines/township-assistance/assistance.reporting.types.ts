@@ -31,6 +31,14 @@ export interface AssistanceBenefitBreakdown {
 }
 
 /**
+ * Household size bucket stats for TA-7 reporting.
+ */
+export interface HouseholdSizeBucketStats {
+  bucketLabel: string;    // e.g. "1", "2-3", "4-5", "6+"
+  caseCount: number;
+}
+
+/**
  * Summary stats for a period, roughly aligned with what TA-7 cares about.
  */
 export interface AssistanceStatsSummary {
@@ -41,5 +49,5 @@ export interface AssistanceStatsSummary {
   totalBenefitsCents: number;
   benefitsByType: AssistanceBenefitBreakdown[];
 
-  // Later: household counts, persons served, etc.
+  householdBuckets?: HouseholdSizeBucketStats[];
 }
