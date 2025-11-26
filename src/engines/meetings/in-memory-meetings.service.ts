@@ -164,24 +164,22 @@ export class InMemoryMeetingsService implements MeetingsService {
       throw new Error('Meeting not found for tenant');
     }
 
+    // Check terminal states first
+    if (meeting.status === 'adjourned') {
+      throw new Error('Cannot cancel an adjourned meeting');
+    }
+
     // Idempotent: if already cancelled, return as-is
     if (meeting.status === 'cancelled') {
       return meeting;
     }
 
-    if (meeting.status === 'adjourned') {
-      throw new Error('Cannot cancel an adjourned meeting');
-    }
-
     // Note: If meeting.status is 'inSession', this is a retroactive cancellation.
     // The audit trail (cancelledAt timestamp) will reflect when the cancellation
     // was recorded, not when the meeting was supposed to occur.
-
     meeting.status = 'cancelled';
     meeting.cancelledAt = new Date();
-    if (reason) {
-      meeting.cancellationReason = reason;
-    }
+    meeting.cancellationReason = reason ?? undefined;
 
     return meeting;
   }

@@ -237,8 +237,8 @@ export interface FeeCalculationResult {
   /** Currency code (locked to USD). */
   currency: 'USD';
 
-  /** When this calculation was performed. Serialize to ISO 8601 for storage/RAG. */
-  calculatedAt: Date;
+  /** ISO 8601 timestamp (UTC) of when this calculation was performed. */
+  calculatedAt: string;
   /** Echoed context from the input for audit trail. */
   context?: FeeCalculationContext;
 }

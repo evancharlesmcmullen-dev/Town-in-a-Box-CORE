@@ -127,7 +127,7 @@ export class InMemoryFeeService implements FeeService {
       subtotalCents,
       totalCents,
       currency: 'USD',
-      calculatedAt: new Date(),
+      calculatedAt: new Date().toISOString(),
       context: input.context,
     };
 

@@ -104,6 +104,17 @@ export class InMemoryAssistanceReportingService
       householdBuckets,
     };
 
+    // Runtime invariant check: bucket totals must equal totalCases
+    const bucketTotal = householdBuckets.reduce(
+      (acc, b) => acc + b.caseCount,
+      0
+    );
+    if (bucketTotal !== totalCases) {
+      throw new Error(
+        `AssistanceStatsSummary invariant violated: bucketTotal=${bucketTotal} totalCases=${totalCases}`
+      );
+    }
+
     return summary;
   }
 
