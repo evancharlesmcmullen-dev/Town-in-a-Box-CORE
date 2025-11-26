@@ -9,11 +9,13 @@ import {
   VoteRecord,
   MeetingType,
   MeetingStatus,
+  MeetingNotice,
 } from './meeting.types';
 import {
   MeetingsService,
   ScheduleMeetingInput,
   MeetingFilter,
+  MarkNoticePostedInput,
 } from './meetings.service';
 
 export interface InMemoryMeetingsSeedData {
@@ -174,6 +176,69 @@ export class InMemoryMeetingsService implements MeetingsService {
     meeting.cancelledAt = new Date();
     if (reason) {
       meeting.cancellationReason = reason;
+    }
+
+    return meeting;
+  }
+
+  async markNoticePosted(
+    ctx: TenantContext,
+    input: MarkNoticePostedInput
+  ): Promise<Meeting> {
+    const meeting = this.meetings.find(
+      (m) => m.id === input.meetingId && m.tenantId === ctx.tenantId
+    );
+
+    if (!meeting) {
+      throw new Error('Meeting not found for tenant');
+    }
+
+    if (meeting.status === 'cancelled') {
+      throw new Error('Cannot post notice for a cancelled meeting');
+    }
+
+    if (meeting.status === 'adjourned') {
+      throw new Error('Cannot post notice for an adjourned meeting');
+    }
+
+    // Default to 48-hour requirement per Indiana Open Door Law (IC 5-14-1.5-5)
+    // Emergency meetings have different rules and can override this
+    const requiredLeadTimeHours =
+      input.requiredLeadTimeHours ?? (meeting.type === 'emergency' ? 0 : 48);
+
+    // Calculate if notice is timely
+    const msDiff =
+      meeting.scheduledStart.getTime() - input.postedAt.getTime();
+    const hoursDiff = msDiff / (1000 * 60 * 60);
+    const isTimely =
+      hoursDiff >= requiredLeadTimeHours || meeting.type === 'emergency';
+
+    const notice: MeetingNotice = {
+      id: randomUUID(),
+      meetingId: meeting.id,
+      postedAt: input.postedAt,
+      postedByUserId: input.postedByUserId,
+      methods: input.methods,
+      locations: input.locations,
+      proofUris: input.proofUris,
+      requiredLeadTimeHours,
+      isTimely,
+      notes: input.notes,
+    };
+
+    // Append to notices array
+    meeting.notices = [...(meeting.notices ?? []), notice];
+    meeting.lastNoticePostedAt = input.postedAt;
+
+    // Update compliance tracking
+    meeting.openDoorCompliance = {
+      hasTimelyNotice: isTimely,
+      lastCheckedAt: new Date(),
+    };
+
+    // Transition status to 'noticed' if currently 'planned'
+    if (meeting.status === 'planned') {
+      meeting.status = 'noticed';
     }
 
     return meeting;

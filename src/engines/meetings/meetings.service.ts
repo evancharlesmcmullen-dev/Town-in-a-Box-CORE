@@ -9,6 +9,7 @@ import {
   VoteRecord,
   MeetingType,
   MeetingStatus,
+  NoticeMethod,
 } from './meeting.types';
 
 // Input for scheduling a meeting.
@@ -26,6 +27,19 @@ export interface MeetingFilter {
   fromDate?: Date;
   toDate?: Date;
   status?: MeetingStatus;
+}
+
+// Input for marking notice as posted (Open Door Law compliance).
+export interface MarkNoticePostedInput {
+  meetingId: string;
+  postedAt: Date;
+  postedByUserId: string;
+  methods: NoticeMethod[];
+  locations: string[];
+  proofUris?: string[];
+  notes?: string;
+  // Override for emergencies or special cases (default is 48 hours)
+  requiredLeadTimeHours?: number;
 }
 
 /**
@@ -89,8 +103,16 @@ export interface MeetingsService {
     reason?: string
   ): Promise<Meeting>;
 
+  /**
+   * Record that public notice has been posted for a meeting.
+   * Evaluates Open Door Law compliance (48-hour rule for regular meetings).
+   */
+  markNoticePosted(
+    ctx: TenantContext,
+    input: MarkNoticePostedInput
+  ): Promise<Meeting>;
+
   // Later we can add:
   // - attachAgenda(...)
   // - attachRecording(...)
-  // - markNoticePosted(...)
 }

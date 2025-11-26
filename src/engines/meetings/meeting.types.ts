@@ -71,6 +71,44 @@ export interface VoteRecord {
 }
 
 /**
+ * Method used to post public notice of a meeting.
+ */
+export type NoticeMethod =
+  | 'PHYSICAL_POSTING'
+  | 'WEBSITE'
+  | 'NEWSPAPER'
+  | 'EMAIL_LIST';
+
+/**
+ * A record of public notice being posted for a meeting.
+ * Supports Open Door Law compliance tracking.
+ */
+export interface MeetingNotice {
+  id: string;
+  meetingId: string;
+  postedAt: Date;
+  postedByUserId: string;
+
+  // Where/how notice was posted
+  methods: NoticeMethod[];
+  locations: string[];        // e.g. ["Town Hall bulletin board", "www.townoflapel.com/meetings"]
+  proofUris?: string[];       // file storage URLs / screenshots / signed receipts
+
+  // Compliance info
+  requiredLeadTimeHours: number;  // typically 48 for regular meetings
+  isTimely: boolean;              // computed: was notice posted with sufficient lead time?
+  notes?: string;                 // e.g. "Emergency meeting – posted ASAP"
+}
+
+/**
+ * Open Door Law compliance status for a meeting.
+ */
+export interface OpenDoorCompliance {
+  hasTimelyNotice: boolean;
+  lastCheckedAt: Date;
+}
+
+/**
  * A governing body's meeting (single date/time/session).
  */
 export interface Meeting {
@@ -88,8 +126,10 @@ export interface Meeting {
   createdByUserId?: string;
   createdAt: Date;
 
-  noticePostedAt?: Date;      // when notice was actually posted
-  noticeId?: string;          // link into Notice engine later
+  // Notice tracking for Open Door Law compliance
+  notices?: MeetingNotice[];
+  lastNoticePostedAt?: Date;
+  openDoorCompliance?: OpenDoorCompliance;
 
   cancelledAt?: Date;         // when meeting was cancelled (if status=cancelled)
   cancellationReason?: string; // optional reason for cancellation
