@@ -13,6 +13,10 @@ import {
   AiBootstrap,
 } from '../index';
 import { InMemoryApraService } from '../engines/records/in-memory-apra.service';
+import { AiApraServiceImpl } from '../engines/records/ai-apra.service.impl';
+import { ApraFeeCalculator } from '../engines/records/apra-fee.calculator';
+import { ApraNotificationService } from '../engines/records/apra-notification.service';
+import { InMemoryNotificationService } from '../core/notifications/in-memory-notification.service';
 import { createMeetingsRouter } from './routes/meetings.routes';
 import { createRecordsRouter } from './routes/records.routes';
 import { requestLogger, tenantContextMiddleware } from './middleware';
@@ -52,8 +56,15 @@ export async function createServer(config: Partial<ServerConfig> = {}): Promise<
   const baseMeetings = new InMemoryMeetingsService();
   const meetings = ai.aiMeetingsService(baseMeetings);
 
-  // Create APRA/records service
-  const records = new InMemoryApraService();
+  // Create APRA/records services
+  const baseRecords = new InMemoryApraService();
+  const aiApra = new AiApraServiceImpl(baseRecords, ai.core);
+  const feeCalculator = new ApraFeeCalculator();
+  const notificationService = new InMemoryNotificationService();
+  const apraNotifications = new ApraNotificationService(
+    baseRecords,
+    notificationService
+  );
 
   // AI client (can be injected for testing)
   const aiClient = config.aiClient ?? new MockAiClient();
@@ -108,8 +119,13 @@ export async function createServer(config: Partial<ServerConfig> = {}): Promise<
   // Meetings routes
   app.use('/api/meetings', createMeetingsRouter(meetings));
 
-  // Records/APRA routes
-  app.use('/api/records', createRecordsRouter(records));
+  // Records/APRA routes (with AI, fees, and notifications)
+  app.use('/api/records', createRecordsRouter({
+    records: baseRecords,
+    aiApra,
+    feeCalculator,
+    apraNotifications,
+  }));
 
   // AI routes (standalone endpoints)
   const aiRouter = createAiRouter(baseMeetings, aiClient);

@@ -1,7 +1,7 @@
 // src/http/routes/records.routes.ts
 //
 // REST API routes for the Records/APRA engine.
-// Follows the pattern established by meetings.routes.ts.
+// Includes AI, fees, and deadline checking endpoints.
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { TenantContext } from '../../core/tenancy/tenancy.types';
@@ -9,6 +9,9 @@ import {
   ApraService,
   ApraRequestFilter,
 } from '../../engines/records/apra.service';
+import { AiApraService } from '../../engines/records/ai-apra.service';
+import { ApraFeeCalculator } from '../../engines/records/apra-fee.calculator';
+import { ApraNotificationService } from '../../engines/records/apra-notification.service';
 import { ApraRequestStatus } from '../../engines/records/apra.types';
 import { buildTenantContext } from '../context';
 
@@ -18,15 +21,42 @@ interface ApiRequest extends Request {
 }
 
 /**
+ * Dependencies for the records router.
+ */
+export interface RecordsRouterDependencies {
+  /** Base APRA service (required) */
+  records: ApraService;
+  /** AI-enhanced APRA service (optional - enables AI endpoints) */
+  aiApra?: AiApraService;
+  /** Fee calculator (optional - enables fee quote endpoint) */
+  feeCalculator?: ApraFeeCalculator;
+  /** Notification service (optional - enables deadline check endpoint) */
+  apraNotifications?: ApraNotificationService;
+}
+
+/**
  * Create records router with all APRA endpoints.
  *
- * @param records - The APRA service instance
+ * @param deps - Service dependencies
  */
-export function createRecordsRouter(records: ApraService): Router {
+export function createRecordsRouter(
+  deps: ApraService | RecordsRouterDependencies
+): Router {
+  // Support both old signature (just ApraService) and new signature (dependencies object)
+  const {
+    records,
+    aiApra,
+    feeCalculator,
+    apraNotifications,
+  }: RecordsRouterDependencies =
+    'createRequest' in deps
+      ? { records: deps as ApraService }
+      : (deps as RecordsRouterDependencies);
+
   const router = Router();
 
   // Middleware to attach tenant context to all routes
-  router.use((req: Request, res: Response, next: NextFunction) => {
+  router.use((req: Request, _res: Response, next: NextFunction) => {
     (req as ApiRequest).ctx = buildTenantContext(req);
     next();
   });
@@ -38,14 +68,6 @@ export function createRecordsRouter(records: ApraService): Router {
   /**
    * POST /api/records/requests
    * Create a new APRA request.
-   *
-   * Body:
-   * - requesterName: string (required)
-   * - requesterEmail: string (optional)
-   * - description: string (required) - the records being requested
-   * - scopes: array (optional) - scope definitions for the request
-   *
-   * Returns: Full ApraRequest with computed statutoryDeadlineAt
    */
   router.post('/requests', async (req: Request, res: Response) => {
     try {
@@ -69,6 +91,17 @@ export function createRecordsRouter(records: ApraService): Router {
       };
 
       const request = await records.createRequest(ctx, input);
+
+      // Optionally notify staff of new request
+      if (apraNotifications) {
+        try {
+          await apraNotifications.notifyNewRequest(ctx, request);
+        } catch {
+          // Don't fail the request if notification fails
+          console.error('Failed to send new request notification');
+        }
+      }
+
       res.status(201).json(request);
     } catch (err) {
       handleError(res, err);
@@ -78,14 +111,6 @@ export function createRecordsRouter(records: ApraService): Router {
   /**
    * GET /api/records/requests
    * List APRA requests with optional filters.
-   *
-   * Query params:
-   * - status: Comma-separated list of statuses (e.g., "RECEIVED,IN_REVIEW")
-   * - from: Filter by received date start (ISO 8601)
-   * - to: Filter by received date end (ISO 8601)
-   * - search: Free text search
-   *
-   * Returns: Array of ApraRequestSummary
    */
   router.get('/requests', async (req: Request, res: Response) => {
     try {
@@ -120,8 +145,6 @@ export function createRecordsRouter(records: ApraService): Router {
   /**
    * GET /api/records/requests/:id
    * Get a single APRA request by ID.
-   *
-   * Returns: Full ApraRequest or 404
    */
   router.get('/requests/:id', async (req: Request, res: Response) => {
     try {
@@ -140,74 +163,8 @@ export function createRecordsRouter(records: ApraService): Router {
   });
 
   /**
-   * POST /api/records/requests/:id/clarifications
-   * Add a clarification request to an APRA request.
-   *
-   * Body:
-   * - messageToRequester: string (required)
-   *
-   * Returns: ApraClarification
-   */
-  router.post('/requests/:id/clarifications', async (req: Request, res: Response) => {
-    try {
-      const ctx = (req as ApiRequest).ctx;
-
-      if (!req.body.messageToRequester) {
-        res.status(400).json({ error: 'messageToRequester is required' });
-        return;
-      }
-
-      const clarification = await records.addClarification(
-        ctx,
-        req.params.id,
-        req.body.messageToRequester
-      );
-
-      res.status(201).json(clarification);
-    } catch (err) {
-      handleError(res, err);
-    }
-  });
-
-  /**
-   * POST /api/records/clarifications/:id/response
-   * Record a response to a clarification request.
-   *
-   * Body:
-   * - requesterResponse: string (required)
-   *
-   * Returns: Updated ApraClarification
-   */
-  router.post('/clarifications/:id/response', async (req: Request, res: Response) => {
-    try {
-      const ctx = (req as ApiRequest).ctx;
-
-      if (!req.body.requesterResponse) {
-        res.status(400).json({ error: 'requesterResponse is required' });
-        return;
-      }
-
-      const clarification = await records.recordClarificationResponse(
-        ctx,
-        req.params.id,
-        req.body.requesterResponse
-      );
-
-      res.json(clarification);
-    } catch (err) {
-      handleError(res, err);
-    }
-  });
-
-  /**
    * POST /api/records/requests/:id/status
    * Update the status of an APRA request.
-   *
-   * Body:
-   * - newStatus: ApraRequestStatus (required)
-   * - note: string (optional)
-   *
-   * Returns: Updated ApraRequest
    */
   router.post('/requests/:id/status', async (req: Request, res: Response) => {
     try {
@@ -235,12 +192,25 @@ export function createRecordsRouter(records: ApraService): Router {
         return;
       }
 
+      // Get old status for notification
+      const oldRequest = await records.getRequest(ctx, req.params.id);
+      const oldStatus = oldRequest?.status;
+
       const updated = await records.updateStatus(
         ctx,
         req.params.id,
         req.body.newStatus,
         req.body.note
       );
+
+      // Notify of status change
+      if (apraNotifications && oldStatus && oldStatus !== updated.status) {
+        try {
+          await apraNotifications.notifyStatusChange(ctx, updated, oldStatus);
+        } catch {
+          console.error('Failed to send status change notification');
+        }
+      }
 
       res.json(updated);
     } catch (err) {
@@ -249,15 +219,74 @@ export function createRecordsRouter(records: ApraService): Router {
   });
 
   /**
+   * POST /api/records/requests/:id/clarifications
+   * Add a clarification request.
+   */
+  router.post('/requests/:id/clarifications', async (req: Request, res: Response) => {
+    try {
+      const ctx = (req as ApiRequest).ctx;
+
+      if (!req.body.messageToRequester) {
+        res.status(400).json({ error: 'messageToRequester is required' });
+        return;
+      }
+
+      const clarification = await records.addClarification(
+        ctx,
+        req.params.id,
+        req.body.messageToRequester
+      );
+
+      res.status(201).json(clarification);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  /**
+   * POST /api/records/clarifications/:id/response
+   * Record a response to a clarification request.
+   */
+  router.post('/clarifications/:id/response', async (req: Request, res: Response) => {
+    try {
+      const ctx = (req as ApiRequest).ctx;
+
+      if (!req.body.requesterResponse) {
+        res.status(400).json({ error: 'requesterResponse is required' });
+        return;
+      }
+
+      const clarification = await records.recordClarificationResponse(
+        ctx,
+        req.params.id,
+        req.body.requesterResponse
+      );
+
+      // Notify that clarification was received
+      if (apraNotifications && clarification.requestId) {
+        const request = await records.getRequest(ctx, clarification.requestId);
+        if (request) {
+          try {
+            await apraNotifications.notifyClarificationReceived(
+              ctx,
+              request,
+              req.body.requesterResponse
+            );
+          } catch {
+            console.error('Failed to send clarification received notification');
+          }
+        }
+      }
+
+      res.json(clarification);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  /**
    * POST /api/records/requests/:id/exemptions
-   * Add an exemption citation to an APRA request.
-   *
-   * Body:
-   * - citation: string (required) - e.g., "IC 5-14-3-4(b)(6)"
-   * - description: string (required) - plain English explanation
-   * - appliesToScopeId: string (optional)
-   *
-   * Returns: ApraExemption
+   * Add an exemption citation.
    */
   router.post('/requests/:id/exemptions', async (req: Request, res: Response) => {
     try {
@@ -288,13 +317,6 @@ export function createRecordsRouter(records: ApraService): Router {
   /**
    * POST /api/records/requests/:id/fulfill
    * Record fulfillment/delivery of records.
-   *
-   * Body:
-   * - deliveryMethod: 'EMAIL' | 'PORTAL' | 'MAIL' | 'IN_PERSON' (required)
-   * - notes: string (optional)
-   * - totalFeesCents: number (optional)
-   *
-   * Returns: ApraFulfillment
    */
   router.post('/requests/:id/fulfill', async (req: Request, res: Response) => {
     try {
@@ -331,9 +353,6 @@ export function createRecordsRouter(records: ApraService): Router {
 
   /**
    * GET /api/records/requests/:id/history
-   * Get status history for an APRA request.
-   *
-   * Returns: Array of ApraStatusHistoryEntry (oldest first)
    */
   router.get('/requests/:id/history', async (req: Request, res: Response) => {
     try {
@@ -347,9 +366,6 @@ export function createRecordsRouter(records: ApraService): Router {
 
   /**
    * GET /api/records/requests/:id/scopes
-   * Get scopes for an APRA request.
-   *
-   * Returns: Array of ApraRequestScope
    */
   router.get('/requests/:id/scopes', async (req: Request, res: Response) => {
     try {
@@ -363,9 +379,6 @@ export function createRecordsRouter(records: ApraService): Router {
 
   /**
    * GET /api/records/requests/:id/clarifications
-   * Get clarifications for an APRA request.
-   *
-   * Returns: Array of ApraClarification
    */
   router.get('/requests/:id/clarifications', async (req: Request, res: Response) => {
     try {
@@ -379,9 +392,6 @@ export function createRecordsRouter(records: ApraService): Router {
 
   /**
    * GET /api/records/requests/:id/exemptions
-   * Get exemptions for an APRA request.
-   *
-   * Returns: Array of ApraExemption
    */
   router.get('/requests/:id/exemptions', async (req: Request, res: Response) => {
     try {
@@ -395,15 +405,192 @@ export function createRecordsRouter(records: ApraService): Router {
 
   /**
    * GET /api/records/requests/:id/fulfillments
-   * Get fulfillments for an APRA request.
-   *
-   * Returns: Array of ApraFulfillment
    */
   router.get('/requests/:id/fulfillments', async (req: Request, res: Response) => {
     try {
       const ctx = (req as ApiRequest).ctx;
       const fulfillments = await records.getFulfillments(ctx, req.params.id);
       res.json(fulfillments);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  // ===========================================================================
+  // AI ENDPOINTS
+  // ===========================================================================
+
+  /**
+   * POST /api/records/requests/:id/ai/particularity
+   * Analyze whether request meets "reasonably particular" requirement.
+   */
+  router.post('/requests/:id/ai/particularity', async (req: Request, res: Response) => {
+    try {
+      if (!aiApra) {
+        res.status(501).json({ error: 'AI service not configured' });
+        return;
+      }
+
+      const ctx = (req as ApiRequest).ctx;
+      const analysis = await aiApra.analyzeParticularity(ctx, req.params.id);
+      res.json(analysis);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  /**
+   * POST /api/records/requests/:id/ai/exemptions
+   * Suggest potentially applicable exemptions.
+   */
+  router.post('/requests/:id/ai/exemptions', async (req: Request, res: Response) => {
+    try {
+      if (!aiApra) {
+        res.status(501).json({ error: 'AI service not configured' });
+        return;
+      }
+
+      const ctx = (req as ApiRequest).ctx;
+      const suggestions = await aiApra.suggestExemptions(ctx, req.params.id);
+      res.json(suggestions);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  /**
+   * POST /api/records/requests/:id/ai/scope
+   * Analyze the scope of a records request.
+   */
+  router.post('/requests/:id/ai/scope', async (req: Request, res: Response) => {
+    try {
+      if (!aiApra) {
+        res.status(501).json({ error: 'AI service not configured' });
+        return;
+      }
+
+      const ctx = (req as ApiRequest).ctx;
+      const analysis = await aiApra.analyzeScope(ctx, req.params.id);
+      res.json(analysis);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  /**
+   * POST /api/records/requests/:id/ai/response-letter
+   * Draft a response letter.
+   */
+  router.post('/requests/:id/ai/response-letter', async (req: Request, res: Response) => {
+    try {
+      if (!aiApra) {
+        res.status(501).json({ error: 'AI service not configured' });
+        return;
+      }
+
+      const ctx = (req as ApiRequest).ctx;
+      const letter = await aiApra.draftResponseLetter(ctx, req.params.id);
+      res.json({
+        requestId: req.params.id,
+        letter,
+      });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  /**
+   * POST /api/records/requests/:id/ai/particularity/review
+   * Review and confirm/reject AI particularity assessment.
+   */
+  router.post('/requests/:id/ai/particularity/review', async (req: Request, res: Response) => {
+    try {
+      if (!aiApra) {
+        res.status(501).json({ error: 'AI service not configured' });
+        return;
+      }
+
+      const ctx = (req as ApiRequest).ctx;
+
+      if (typeof req.body.isParticular !== 'boolean') {
+        res.status(400).json({ error: 'isParticular (boolean) is required' });
+        return;
+      }
+
+      const updated = await aiApra.reviewParticularity(
+        ctx,
+        req.params.id,
+        req.body.isParticular,
+        req.body.reason
+      );
+
+      res.json(updated);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  // ===========================================================================
+  // FEE ENDPOINTS
+  // ===========================================================================
+
+  /**
+   * POST /api/records/requests/:id/fees/quote
+   * Calculate fee quote for copying/media costs.
+   */
+  router.post('/requests/:id/fees/quote', async (req: Request, res: Response) => {
+    try {
+      if (!feeCalculator) {
+        res.status(501).json({ error: 'Fee calculator not configured' });
+        return;
+      }
+
+      const ctx = (req as ApiRequest).ctx;
+
+      // Get request for context
+      const request = await records.getRequest(ctx, req.params.id);
+      if (!request) {
+        res.status(404).json({ error: 'APRA request not found' });
+        return;
+      }
+
+      const result = feeCalculator.calculateFees(ctx, {
+        requestId: req.params.id,
+        requesterName: request.requesterName,
+        bwPages: req.body.bwPages,
+        colorPages: req.body.colorPages,
+        largeFormatPages: req.body.largeFormatPages,
+        cdDvdMedia: req.body.cdDvdMedia,
+        usbMedia: req.body.usbMedia,
+        requiresMailing: req.body.requiresMailing,
+        laborHours: req.body.laborHours,
+        certifications: req.body.certifications,
+      });
+
+      res.json(result);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  // ===========================================================================
+  // DEADLINE / NOTIFICATION ENDPOINTS
+  // ===========================================================================
+
+  /**
+   * POST /api/records/deadlines/check
+   * Check all open requests for approaching or past deadlines.
+   */
+  router.post('/deadlines/check', async (req: Request, res: Response) => {
+    try {
+      if (!apraNotifications) {
+        res.status(501).json({ error: 'Notification service not configured' });
+        return;
+      }
+
+      const ctx = (req as ApiRequest).ctx;
+      const result = await apraNotifications.checkDeadlines(ctx);
+      res.json(result);
     } catch (err) {
       handleError(res, err);
     }
