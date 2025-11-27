@@ -19,9 +19,26 @@ import { ApraNotificationService } from '../engines/records/apra-notification.se
 import { InMemoryNotificationService } from '../core/notifications/in-memory-notification.service';
 import { createMeetingsRouter } from './routes/meetings.routes';
 import { createRecordsRouter } from './routes/records.routes';
+import { createTownshipAssistanceRouter } from './routes/township-assistance.routes';
+import { createFenceViewerRouter } from './routes/fence-viewer.routes';
+import { createWeedControlRouter } from './routes/weed-control.routes';
+import { createCemeteriesRouter } from './routes/cemeteries.routes';
+import { createFireContractsRouter } from './routes/fire-contracts.routes';
+import { createInsuranceBondsRouter } from './routes/insurance-bonds.routes';
+import { createPoliciesRouter } from './routes/policies.routes';
 import { requestLogger, tenantContextMiddleware } from './middleware';
 import { errorHandler, notFoundHandler } from './errors';
 import { createAiRouter, AiClient, MockAiClient } from './ai.routes';
+
+// Township engine services
+import { InMemoryAssistanceService } from '../engines/township-assistance/in-memory-assistance.service';
+import { InMemoryAssistanceReportingService } from '../engines/township-assistance/in-memory-assistance.reporting.service';
+import { InMemoryFenceViewerService } from '../engines/fence-viewer/in-memory-fence-viewer.service';
+import { InMemoryWeedControlService } from '../engines/weed-control/in-memory-weed-control.service';
+import { InMemoryCemeteryService } from '../engines/cemeteries/in-memory-cemetery.service';
+import { InMemoryFireContractService } from '../engines/fire/in-memory-fire-contract.service';
+import { InMemoryInsuranceBondsService } from '../engines/insurance-bonds/in-memory-insurance-bonds.service';
+import { InMemoryPolicyService } from '../engines/policies/in-memory-policy.service';
 
 export interface ServerConfig {
   port: number;
@@ -126,6 +143,30 @@ export async function createServer(config: Partial<ServerConfig> = {}): Promise<
     feeCalculator,
     apraNotifications,
   }));
+
+  // Township engine services
+  const assistanceService = new InMemoryAssistanceService();
+  const assistanceReporting = new InMemoryAssistanceReportingService(assistanceService);
+  const fenceViewerService = new InMemoryFenceViewerService();
+  const weedControlService = new InMemoryWeedControlService();
+  const cemeteryService = new InMemoryCemeteryService();
+  const fireContractService = new InMemoryFireContractService();
+  const insuranceBondsService = new InMemoryInsuranceBondsService();
+  const policyService = new InMemoryPolicyService();
+
+  // Township routes (all under /api/township)
+  app.use('/api/township/assistance', createTownshipAssistanceRouter({
+    assistance: assistanceService,
+    reporting: assistanceReporting,
+  }));
+  app.use('/api/township/fence-viewer', createFenceViewerRouter(fenceViewerService));
+  app.use('/api/township/weed-control', createWeedControlRouter(weedControlService));
+  app.use('/api/township/cemeteries', createCemeteriesRouter(cemeteryService));
+  app.use('/api/township/fire', createFireContractsRouter(fireContractService));
+  app.use('/api/township/insurance', createInsuranceBondsRouter(insuranceBondsService));
+
+  // Policies routes (shared across all unit types, not under /township)
+  app.use('/api/policies', createPoliciesRouter(policyService));
 
   // AI routes (standalone endpoints)
   const aiRouter = createAiRouter(baseMeetings, aiClient);
