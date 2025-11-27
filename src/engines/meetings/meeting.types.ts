@@ -88,8 +88,13 @@ export interface Meeting {
   createdByUserId?: string;
   createdAt: Date;
 
-  noticePostedAt?: Date;      // when notice was actually posted
-  noticeId?: string;          // link into Notice engine later
+  // Notice lifecycle
+  noticePostedAt?: Date;      // when first notice was posted
+  lastNoticePostedAt?: Date;  // most recent notice posting (for amendments)
+
+  // Cancellation lifecycle
+  cancelledAt?: Date;
+  cancellationReason?: string;
 }
 
 /**
