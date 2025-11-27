@@ -2,3 +2,4 @@
 export * from './tenancy.types';
 export * from './tenancy.service';
 export * from './in-memory-tenancy.service';
+export * from './domain-config.service';

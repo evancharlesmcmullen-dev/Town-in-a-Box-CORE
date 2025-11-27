@@ -1,7 +1,7 @@
 // src/core/state/state-registry.ts
 
 import { JurisdictionProfile } from '../tenancy/tenancy.types';
-import { StateMetadata, StatePack, USStateCode } from './state.types';
+import { StateMetadata, StatePack, StateDomainPack, USStateCode } from './state.types';
 
 /**
  * Registry for state metadata and domain packs.
@@ -12,6 +12,7 @@ import { StateMetadata, StatePack, USStateCode } from './state.types';
 export class StateRegistry {
   private states: Map<USStateCode, StateMetadata> = new Map();
   private packs: Map<string, StatePack[]> = new Map(); // key: `${state}:${domain}`
+  private domainPacks: Map<string, StateDomainPack> = new Map(); // key: `${state}:${domain}`
 
   /**
    * Register a state with its metadata.
@@ -88,7 +89,73 @@ export class StateRegistry {
    */
   isDomainSupported(state: USStateCode, domain: string): boolean {
     const key = `${state}:${domain}`;
-    return this.packs.has(key) && (this.packs.get(key)?.length ?? 0) > 0;
+    const hasLegacyPack = this.packs.has(key) && (this.packs.get(key)?.length ?? 0) > 0;
+    const hasDomainPack = this.domainPacks.has(key);
+    return hasLegacyPack || hasDomainPack;
+  }
+
+  // =========================================================================
+  // StateDomainPack Registry (new "thinking" pack pattern)
+  // =========================================================================
+
+  /**
+   * Register a domain pack for a state.
+   *
+   * Domain packs are the new pattern that "thinks" - they derive configuration
+   * from tenant identity using state-specific rules.
+   *
+   * @param pack - The domain pack to register
+   */
+  registerDomainPack<TConfig = unknown>(pack: StateDomainPack<TConfig>): void {
+    const key = `${pack.state}:${pack.domain}`;
+    this.domainPacks.set(key, pack as StateDomainPack);
+  }
+
+  /**
+   * Get the domain pack for a state and domain.
+   *
+   * @param state - State code (e.g., 'IN')
+   * @param domain - Domain name (e.g., 'finance')
+   * @returns The domain pack, or undefined if not registered
+   */
+  getDomainPack<TConfig = unknown>(
+    state: USStateCode,
+    domain: string
+  ): StateDomainPack<TConfig> | undefined {
+    const key = `${state}:${domain}`;
+    return this.domainPacks.get(key) as StateDomainPack<TConfig> | undefined;
+  }
+
+  /**
+   * Get all registered domain packs for a state.
+   *
+   * @param state - State code
+   * @returns Array of domain packs registered for this state
+   */
+  getDomainPacksForState(state: USStateCode): StateDomainPack[] {
+    const packs: StateDomainPack[] = [];
+    for (const [key, pack] of this.domainPacks.entries()) {
+      if (key.startsWith(`${state}:`)) {
+        packs.push(pack);
+      }
+    }
+    return packs;
+  }
+
+  /**
+   * Get all domains with registered domain packs for a state.
+   *
+   * @param state - State code
+   * @returns Array of domain names
+   */
+  getDomainPackDomainsForState(state: USStateCode): string[] {
+    const domains: string[] = [];
+    for (const key of this.domainPacks.keys()) {
+      if (key.startsWith(`${state}:`)) {
+        domains.push(key.split(':')[1]);
+      }
+    }
+    return domains;
   }
 }
 
@@ -97,3 +164,36 @@ export class StateRegistry {
  * Individual state modules will register themselves on import.
  */
 export const stateRegistry = new StateRegistry();
+
+// =============================================================================
+// Convenience functions for domain pack registration
+// =============================================================================
+
+/**
+ * Register a domain pack in the global registry.
+ *
+ * This should be called from state pack modules to register themselves.
+ * For example, src/states/in/finance/index.ts should call:
+ *   registerDomainPack(InFinancePack);
+ *
+ * @param pack - The domain pack to register
+ */
+export function registerDomainPack<TConfig = unknown>(
+  pack: StateDomainPack<TConfig>
+): void {
+  stateRegistry.registerDomainPack(pack);
+}
+
+/**
+ * Get a domain pack from the global registry.
+ *
+ * @param state - State code (e.g., 'IN')
+ * @param domain - Domain name (e.g., 'finance')
+ * @returns The domain pack, or undefined if not registered
+ */
+export function getDomainPack<TConfig = unknown>(
+  state: USStateCode,
+  domain: string
+): StateDomainPack<TConfig> | undefined {
+  return stateRegistry.getDomainPack<TConfig>(state, domain);
+}
