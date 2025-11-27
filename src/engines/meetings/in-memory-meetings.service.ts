@@ -183,6 +183,7 @@ export class InMemoryMeetingsService implements MeetingsService {
     // was recorded, not when the meeting was supposed to occur.
     meeting.status = 'cancelled';
     meeting.cancelledAt = new Date();
+    meeting.cancelledByUserId = ctx.userId;
     meeting.cancellationReason = reason ?? undefined;
 
     return meeting;
@@ -282,6 +283,27 @@ export class InMemoryMeetingsService implements MeetingsService {
       meeting.status = 'noticed';
     }
 
+    return meeting;
+  }
+
+  /**
+   * Update a meeting's AI summary. Used by AI routes.
+   */
+  async updateAiSummary(
+    ctx: TenantContext,
+    meetingId: string,
+    summary: string
+  ): Promise<Meeting> {
+    const meeting = this.meetings.find(
+      (m) => m.id === meetingId && m.tenantId === ctx.tenantId
+    );
+
+    if (!meeting) {
+      throw new Error('Meeting not found for tenant');
+    }
+
+    meeting.aiCouncilSummary = summary;
+    meeting.aiSummaryGeneratedAt = new Date().toISOString();
     return meeting;
   }
 }

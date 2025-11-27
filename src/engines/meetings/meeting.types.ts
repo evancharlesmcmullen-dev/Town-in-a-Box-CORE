@@ -167,9 +167,11 @@ export interface Meeting {
   notices?: MeetingNotice[];
   noticePostedAt?: Date;      // when first notice was posted (backward compat)
   lastNoticePostedAt?: Date;
+  noticeId?: string;          // link into Notice engine later
   openDoorCompliance?: OpenDoorCompliance;
 
   cancelledAt?: Date;         // when meeting was cancelled (if status=cancelled)
+  cancelledByUserId?: string; // who cancelled it
   cancellationReason?: string; // optional reason for cancellation
 
   // AI-generated content

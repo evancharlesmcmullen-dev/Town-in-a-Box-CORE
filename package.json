@@ -18,6 +18,8 @@
     "@types/geojson": "^7946.0.16",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.15.6",
+    "@types/supertest": "^6.0.2",
+    "supertest": "^7.0.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.0.0",
     "vitest": "^4.0.14"

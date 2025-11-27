@@ -131,6 +131,15 @@ export interface MeetingsService {
     input: MarkNoticePostedInput
   ): Promise<Meeting>;
 
+  /**
+   * Update a meeting's AI summary. Used by AI routes.
+   */
+  updateAiSummary?(
+    ctx: TenantContext,
+    meetingId: string,
+    summary: string
+  ): Promise<Meeting>;
+
   // Later we can add:
   // - attachAgenda(...)
   // - attachRecording(...)
