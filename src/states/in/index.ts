@@ -74,3 +74,7 @@ export * from './records/in-records.pack';
 export * from './planning/in-planning.pack';
 export * from './apra/in-apra.pack';
 export * from './utilities/in-utilities.pack';
+export * from './township/in-township.pack';
+
+// Import township pack to trigger registration with the state registry
+import './township';
