@@ -1,13 +1,13 @@
-// src/states/in/legal/finance/in-financial-rules.engine.ts
+// src/states/in/finance/in-financial-rules.engine.ts
 
-import { JurisdictionProfile } from '../../../../core/tenancy/tenancy.types';
+import { JurisdictionProfile } from '../../../core/tenancy/tenancy.types';
 import {
   FinanceRuleSet,
   FundDefinition,
   AppropriationRuleSet,
   FinanceReportingRequirement,
-} from '../../../../core/finance/finance-rules.types';
-import { FinancialRulesEngine } from '../../../../core/finance/finance-rules.engine';
+} from '../../../core/finance/finance-rules.types';
+import { FinancialRulesEngine } from '../../../core/finance/finance-rules.engine';
 
 /**
  * Indiana-specific financial rules engine.
