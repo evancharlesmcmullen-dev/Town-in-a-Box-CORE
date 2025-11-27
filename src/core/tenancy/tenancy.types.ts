@@ -25,7 +25,7 @@ export interface JurisdictionProfile {
   state: StateCode;
   kind: LocalGovKind;
 
-  name: string;             // e.g. "Town of Lapel", "Green Township"
+  name: string;             // e.g. "Town of Springfield", "Green Township"
   population?: number;
   countyName?: string;
 
