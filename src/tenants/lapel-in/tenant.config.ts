@@ -2,7 +2,6 @@
 
 import { StateTenantConfig, TenantIdentity } from '../../core/state';
 import { JurisdictionProfile } from '../../core/tenancy/tenancy.types';
-import { InFinancePackOptions } from '../../states/in/finance/in-finance.pack';
 
 /**
  * Town of Lapel, Indiana - Tenant Configuration
@@ -13,6 +12,10 @@ import { InFinancePackOptions } from '../../states/in/finance/in-finance.pack';
  * Population: ~2,350 (2020 Census)
  * - This means Lapel CANNOT levy its own LIT (threshold is 3,501)
  * - Lapel uses county LIT distributions from Madison County
+ *
+ * NOTE: This file only contains static configuration data.
+ * All state-specific logic (LIT rules, fire model defaults, etc.) is handled
+ * by the generic config resolver using the registered Indiana Finance Pack.
  */
 
 // =============================================================================
@@ -35,12 +38,12 @@ const lapelJurisdiction: JurisdictionProfile = {
 };
 
 // =============================================================================
-// TENANT IDENTITY (for use with StateDomainPacks)
+// TENANT IDENTITY (for use with config resolver)
 // =============================================================================
 
 /**
- * Lapel's tenant identity for use with state packs.
- * This is what gets passed to InFinancePack.getDefaultConfig().
+ * Lapel's tenant identity for use with state domain packs.
+ * This is passed to buildDomainConfig() which calls the appropriate pack.
  */
 export const lapelIdentity: TenantIdentity = {
   tenantId: 'lapel-in',
@@ -58,21 +61,25 @@ export const lapelIdentity: TenantIdentity = {
 /**
  * Finance-specific overrides for Lapel.
  *
- * The InFinancePack will compute defaults based on population:
- * - canLevyOwnLIT: false (population 2,350 < 3,501 threshold)
- * - usesCountyLIT: true
+ * These are plain data overrides that will be merged with computed defaults
+ * by the generic config resolver. The resolver will:
+ * 1. Look up the finance pack for Indiana (state: 'IN', domain: 'finance')
+ * 2. Call pack.getDefaultConfig(identity) to compute LIT eligibility
+ * 3. Merge these overrides on top of the computed defaults
  *
- * We can override other settings here as needed.
+ * NOTE: This is a plain data object with no type dependency on state packs.
+ * The types are kept generic to ensure tenants don't import from src/states/**.
  */
-export const lapelFinanceOverrides: InFinancePackOptions = {
+export const lapelFinanceOverrides: Record<string, unknown> = {
   // Lapel operates its own fire department
   fireModel: 'DEPARTMENT',
 
   // Lapel has water and sewer utilities
   hasUtilityFunds: true,
 
-  // Leave LIT settings to be computed from population by the pack
-  // (no need to override canLevyOwnLIT or usesCountyLIT)
+  // LIT settings are computed automatically from population by the pack:
+  // - canLevyOwnLIT: false (population 2,350 < 3,501 threshold)
+  // - usesCountyLIT: true
 };
 
 // =============================================================================

@@ -19,8 +19,8 @@ class MockAiCoreService implements AiCoreService {
     };
   }
 
-  async complete(_ctx: TenantContext, prompt: string): Promise<string> {
-    return prompt;
+  async complete(_ctx: TenantContext, _prompt: string): Promise<string> {
+    return this.mockResponse;
   }
 }
 
@@ -105,8 +105,8 @@ describe('AiApraServiceImpl', () => {
       const analysis = await service.analyzeParticularity(ctx, request.id);
 
       expect(analysis.isParticular).toBe(true);
-      expect(analysis.confidence).toBe(0.3);
-      expect(analysis.reasoning).toContain('inconclusive');
+      expect(analysis.confidence).toBe(0.5);
+      expect(analysis.reasoning).toContain('Unable to parse');
     });
 
     it('should throw error for non-existent request', async () => {

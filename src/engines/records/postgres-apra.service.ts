@@ -1,7 +1,7 @@
 // src/engines/records/postgres-apra.service.ts
 //
-// Postgres-backed implementation of ApraService using TenantAwareDb.
-// Uses RLS-enforced multi-tenancy following the pattern from PostgresMeetingsService.
+// PostgreSQL-backed implementation of ApraService.
+// Uses TenantAwareDb for RLS-enforced multi-tenancy.
 
 import { TenantAwareDb } from '../../db/tenant-aware-db';
 import { TenantContext } from '../../core/tenancy/tenancy.types';
@@ -27,9 +27,9 @@ import {
   getIndianaStateHolidays,
 } from '../../core/calendar/open-door.calendar';
 
-// =============================================================================
-// Row types for database mapping
-// =============================================================================
+// ===========================================================================
+// ROW TYPES (from database schema)
+// ===========================================================================
 
 interface ApraRequestRow {
   id: string;
@@ -93,20 +93,26 @@ interface ApraFulfillmentRow {
   total_fees_cents: number | null;
 }
 
-// =============================================================================
-// PostgresApraService
-// =============================================================================
+// ===========================================================================
+// POSTGRES APRA SERVICE
+// ===========================================================================
 
 /**
- * Postgres-backed implementation of ApraService.
- * Uses TenantAwareDb for RLS-enforced multi-tenancy.
+ * PostgreSQL-backed implementation of ApraService.
+ *
+ * Uses TenantAwareDb for RLS-enforced multi-tenancy. All queries are
+ * automatically scoped to the current tenant via PostgreSQL session variables.
+ *
+ * Database schema assumes these tables exist:
+ * - apra_requests
+ * - apra_request_scopes
+ * - apra_status_history
+ * - apra_clarifications
+ * - apra_exemptions
+ * - apra_fulfillments
  */
 export class PostgresApraService implements ApraService {
   constructor(private readonly db: TenantAwareDb) {}
-
-  // ---------------------------------------------------------------------------
-  // Create Request
-  // ---------------------------------------------------------------------------
 
   async createRequest(
     ctx: TenantContext,
@@ -124,7 +130,7 @@ export class PostgresApraService implements ApraService {
       const deadline = computeApraDeadline(now, { holidays });
 
       // Insert the request
-      const requestResult = await client.query<ApraRequestRow>(
+      const result = await client.query<ApraRequestRow>(
         `
         INSERT INTO apra_requests (
           id, tenant_id, requester_name, requester_email, description,
@@ -134,7 +140,7 @@ export class PostgresApraService implements ApraService {
         VALUES (
           gen_random_uuid(), $1, $2, $3, $4,
           true, $5, $6,
-          'RECEIVED', $7, $7
+          'RECEIVED', $5, $5
         )
         RETURNING *
         `,
@@ -145,21 +151,20 @@ export class PostgresApraService implements ApraService {
           input.description,
           now,
           deadline,
-          now,
         ]
       );
 
-      const requestRow = requestResult.rows[0];
+      const row = result.rows[0];
 
       // Create initial status history entry
       await client.query(
         `
         INSERT INTO apra_status_history (
-          id, tenant_id, request_id, new_status, changed_at, changed_by_user_id, note
+          id, request_id, new_status, changed_at, changed_by_user_id, note
         )
-        VALUES (gen_random_uuid(), $1, $2, 'RECEIVED', $3, $4, 'Request received')
+        VALUES (gen_random_uuid(), $1, 'RECEIVED', $2, $3, 'Request received')
         `,
-        [ctx.tenantId, requestRow.id, now, ctx.userId ?? null]
+        [row.id, now, ctx.userId ?? null]
       );
 
       // Create scopes if provided
@@ -168,14 +173,13 @@ export class PostgresApraService implements ApraService {
           await client.query(
             `
             INSERT INTO apra_request_scopes (
-              id, tenant_id, request_id, record_type,
-              date_range_start, date_range_end, custodians, keywords
+              id, request_id, record_type, date_range_start, date_range_end,
+              custodians, keywords
             )
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7)
+            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
             `,
             [
-              ctx.tenantId,
-              requestRow.id,
+              row.id,
               scopeInput.recordType ?? null,
               scopeInput.dateRangeStart ?? null,
               scopeInput.dateRangeEnd ?? null,
@@ -186,13 +190,9 @@ export class PostgresApraService implements ApraService {
         }
       }
 
-      return this.rowToRequest(requestRow);
+      return this.rowToRequest(row);
     });
   }
-
-  // ---------------------------------------------------------------------------
-  // Get / List Requests
-  // ---------------------------------------------------------------------------
 
   async getRequest(
     ctx: TenantContext,
@@ -220,14 +220,17 @@ export class PostgresApraService implements ApraService {
         conditions.push(`status = ANY($${idx++})`);
         params.push(filter.status);
       }
+
       if (filter?.fromDate) {
         conditions.push(`received_at >= $${idx++}`);
         params.push(filter.fromDate);
       }
+
       if (filter?.toDate) {
         conditions.push(`received_at <= $${idx++}`);
         params.push(filter.toDate);
       }
+
       if (filter?.searchText) {
         conditions.push(`(description ILIKE $${idx} OR requester_name ILIKE $${idx})`);
         params.push(`%${filter.searchText}%`);
@@ -243,39 +246,35 @@ export class PostgresApraService implements ApraService {
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // Clarifications
-  // ---------------------------------------------------------------------------
-
   async addClarification(
     ctx: TenantContext,
     requestId: string,
     messageToRequester: string
   ): Promise<ApraClarification> {
     return this.db.withTenant(ctx.tenantId, async (client) => {
-      const now = new Date();
-
-      // Verify request exists
-      const check = await client.query<ApraRequestRow>(
+      // Verify request exists for tenant
+      const checkResult = await client.query<ApraRequestRow>(
         `SELECT * FROM apra_requests WHERE tenant_id = $1 AND id = $2`,
         [ctx.tenantId, requestId]
       );
-      if (check.rows.length === 0) {
+
+      if (checkResult.rows.length === 0) {
         throw new Error('APRA request not found for tenant');
       }
 
-      const oldStatus = check.rows[0].status;
+      const request = checkResult.rows[0];
+      const now = new Date();
 
-      // Insert clarification
+      // Create clarification
       const clarResult = await client.query<ApraClarificationRow>(
         `
         INSERT INTO apra_clarifications (
-          id, tenant_id, request_id, sent_at, message_to_requester
+          id, request_id, sent_at, message_to_requester
         )
-        VALUES (gen_random_uuid(), $1, $2, $3, $4)
+        VALUES (gen_random_uuid(), $1, $2, $3)
         RETURNING *
         `,
-        [ctx.tenantId, requestId, now, messageToRequester]
+        [requestId, now, messageToRequester]
       );
 
       // Update request status
@@ -285,21 +284,21 @@ export class PostgresApraService implements ApraService {
         SET status = 'NEEDS_CLARIFICATION',
             reasonably_particular = false,
             particularity_reason = 'Clarification requested from requester',
-            updated_at = $3
-        WHERE tenant_id = $1 AND id = $2
+            updated_at = $2
+        WHERE tenant_id = $1 AND id = $3
         `,
-        [ctx.tenantId, requestId, now]
+        [ctx.tenantId, now, requestId]
       );
 
-      // Add status history
+      // Add status history entry
       await client.query(
         `
         INSERT INTO apra_status_history (
-          id, tenant_id, request_id, old_status, new_status, changed_at, changed_by_user_id, note
+          id, request_id, old_status, new_status, changed_at, changed_by_user_id, note
         )
-        VALUES (gen_random_uuid(), $1, $2, $3, 'NEEDS_CLARIFICATION', $4, $5, 'Clarification requested')
+        VALUES (gen_random_uuid(), $1, $2, 'NEEDS_CLARIFICATION', $3, $4, 'Clarification requested')
         `,
-        [ctx.tenantId, requestId, oldStatus, now, ctx.userId ?? null]
+        [requestId, request.status, now, ctx.userId ?? null]
       );
 
       return this.rowToClarification(clarResult.rows[0]);
@@ -312,47 +311,49 @@ export class PostgresApraService implements ApraService {
     requesterResponse: string
   ): Promise<ApraClarification> {
     return this.db.withTenant(ctx.tenantId, async (client) => {
-      const now = new Date();
-
       // Get clarification
       const clarResult = await client.query<ApraClarificationRow>(
-        `SELECT * FROM apra_clarifications WHERE tenant_id = $1 AND id = $2`,
-        [ctx.tenantId, clarificationId]
+        `SELECT * FROM apra_clarifications WHERE id = $1`,
+        [clarificationId]
       );
+
       if (clarResult.rows.length === 0) {
         throw new Error('Clarification not found');
       }
 
       const clarification = clarResult.rows[0];
 
-      // Verify request exists and belongs to tenant
+      // Verify request exists for tenant
       const requestResult = await client.query<ApraRequestRow>(
         `SELECT * FROM apra_requests WHERE tenant_id = $1 AND id = $2`,
         [ctx.tenantId, clarification.request_id]
       );
+
       if (requestResult.rows.length === 0) {
         throw new Error('APRA request not found for tenant');
       }
 
-      const oldStatus = requestResult.rows[0].status;
+      const request = requestResult.rows[0];
+      const now = new Date();
 
-      // Update clarification
-      await client.query(
-        `
-        UPDATE apra_clarifications
-        SET responded_at = $3, requester_response = $4
-        WHERE tenant_id = $1 AND id = $2
-        `,
-        [ctx.tenantId, clarificationId, now, requesterResponse]
-      );
-
-      // Recompute deadline
+      // Recompute the statutory deadline from the response date
       const receivedYear = now.getFullYear();
       const holidays = getIndianaStateHolidays(receivedYear);
       if (now.getMonth() >= 10) {
         holidays.push(...getIndianaStateHolidays(receivedYear + 1));
       }
       const newDeadline = computeApraDeadline(now, { holidays });
+
+      // Update clarification
+      const updatedClarResult = await client.query<ApraClarificationRow>(
+        `
+        UPDATE apra_clarifications
+        SET responded_at = $1, requester_response = $2
+        WHERE id = $3
+        RETURNING *
+        `,
+        [now, requesterResponse, clarificationId]
+      );
 
       // Update request
       await client.query(
@@ -361,36 +362,27 @@ export class PostgresApraService implements ApraService {
         SET status = 'IN_REVIEW',
             reasonably_particular = true,
             particularity_reason = 'Request clarified by requester',
-            statutory_deadline_at = $3,
-            updated_at = $4
-        WHERE tenant_id = $1 AND id = $2
+            statutory_deadline_at = $2,
+            updated_at = $3
+        WHERE tenant_id = $1 AND id = $4
         `,
-        [ctx.tenantId, clarification.request_id, newDeadline, now]
+        [ctx.tenantId, newDeadline, now, clarification.request_id]
       );
 
-      // Add status history
+      // Add status history entry
       await client.query(
         `
         INSERT INTO apra_status_history (
-          id, tenant_id, request_id, old_status, new_status, changed_at, changed_by_user_id, note
+          id, request_id, old_status, new_status, changed_at, changed_by_user_id, note
         )
-        VALUES (gen_random_uuid(), $1, $2, $3, 'IN_REVIEW', $4, $5, 'Clarification received, deadline reset')
+        VALUES (gen_random_uuid(), $1, $2, 'IN_REVIEW', $3, $4, 'Clarification received, deadline reset')
         `,
-        [ctx.tenantId, clarification.request_id, oldStatus, now, ctx.userId ?? null]
+        [clarification.request_id, request.status, now, ctx.userId ?? null]
       );
 
-      // Return updated clarification
-      const updated = await client.query<ApraClarificationRow>(
-        `SELECT * FROM apra_clarifications WHERE tenant_id = $1 AND id = $2`,
-        [ctx.tenantId, clarificationId]
-      );
-      return this.rowToClarification(updated.rows[0]);
+      return this.rowToClarification(updatedClarResult.rows[0]);
     });
   }
-
-  // ---------------------------------------------------------------------------
-  // Status Updates
-  // ---------------------------------------------------------------------------
 
   async updateStatus(
     ctx: TenantContext,
@@ -399,24 +391,28 @@ export class PostgresApraService implements ApraService {
     note?: string
   ): Promise<ApraRequest> {
     return this.db.withTenant(ctx.tenantId, async (client) => {
-      const now = new Date();
-
       // Get current request
-      const existing = await client.query<ApraRequestRow>(
+      const result = await client.query<ApraRequestRow>(
         `SELECT * FROM apra_requests WHERE tenant_id = $1 AND id = $2`,
         [ctx.tenantId, requestId]
       );
-      if (existing.rows.length === 0) {
+
+      if (result.rows.length === 0) {
         throw new Error('APRA request not found for tenant');
       }
 
-      const oldStatus = existing.rows[0].status;
+      const request = result.rows[0];
+      const oldStatus = request.status;
+
+      // No-op if same status
       if (oldStatus === newStatus) {
-        return this.rowToRequest(existing.rows[0]);
+        return this.rowToRequest(request);
       }
 
+      const now = new Date();
+
       // Update request
-      const result = await client.query<ApraRequestRow>(
+      const updatedResult = await client.query<ApraRequestRow>(
         `
         UPDATE apra_requests
         SET status = $3, updated_at = $4
@@ -426,24 +422,20 @@ export class PostgresApraService implements ApraService {
         [ctx.tenantId, requestId, newStatus, now]
       );
 
-      // Add status history
+      // Add status history entry
       await client.query(
         `
         INSERT INTO apra_status_history (
-          id, tenant_id, request_id, old_status, new_status, changed_at, changed_by_user_id, note
+          id, request_id, old_status, new_status, changed_at, changed_by_user_id, note
         )
-        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7)
+        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
         `,
-        [ctx.tenantId, requestId, oldStatus, newStatus, now, ctx.userId ?? null, note ?? null]
+        [requestId, oldStatus, newStatus, now, ctx.userId ?? null, note ?? null]
       );
 
-      return this.rowToRequest(result.rows[0]);
+      return this.rowToRequest(updatedResult.rows[0]);
     });
   }
-
-  // ---------------------------------------------------------------------------
-  // Exemptions
-  // ---------------------------------------------------------------------------
 
   async addExemption(
     ctx: TenantContext,
@@ -451,28 +443,28 @@ export class PostgresApraService implements ApraService {
     input: AddExemptionInput
   ): Promise<ApraExemptionCitation> {
     return this.db.withTenant(ctx.tenantId, async (client) => {
-      const now = new Date();
-
-      // Verify request exists
-      const check = await client.query(
+      // Verify request exists for tenant
+      const checkResult = await client.query(
         `SELECT id FROM apra_requests WHERE tenant_id = $1 AND id = $2`,
         [ctx.tenantId, requestId]
       );
-      if (check.rows.length === 0) {
+
+      if (checkResult.rows.length === 0) {
         throw new Error('APRA request not found for tenant');
       }
 
-      // Insert exemption
+      const now = new Date();
+
+      // Create exemption
       const result = await client.query<ApraExemptionRow>(
         `
         INSERT INTO apra_exemptions (
-          id, tenant_id, request_id, citation, description, applies_to_scope_id, created_at
+          id, request_id, citation, description, applies_to_scope_id, created_at
         )
-        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
+        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5)
         RETURNING *
         `,
         [
-          ctx.tenantId,
           requestId,
           input.citation,
           input.description,
@@ -483,17 +475,13 @@ export class PostgresApraService implements ApraService {
 
       // Update request timestamp
       await client.query(
-        `UPDATE apra_requests SET updated_at = $3 WHERE tenant_id = $1 AND id = $2`,
-        [ctx.tenantId, requestId, now]
+        `UPDATE apra_requests SET updated_at = $2 WHERE tenant_id = $1 AND id = $3`,
+        [ctx.tenantId, now, requestId]
       );
 
       return this.rowToExemption(result.rows[0]);
     });
   }
-
-  // ---------------------------------------------------------------------------
-  // Fulfillment
-  // ---------------------------------------------------------------------------
 
   async recordFulfillment(
     ctx: TenantContext,
@@ -501,28 +489,28 @@ export class PostgresApraService implements ApraService {
     input: RecordFulfillmentInput
   ): Promise<ApraFulfillment> {
     return this.db.withTenant(ctx.tenantId, async (client) => {
-      const now = new Date();
-
-      // Verify request exists
-      const check = await client.query(
+      // Verify request exists for tenant
+      const checkResult = await client.query(
         `SELECT id FROM apra_requests WHERE tenant_id = $1 AND id = $2`,
         [ctx.tenantId, requestId]
       );
-      if (check.rows.length === 0) {
+
+      if (checkResult.rows.length === 0) {
         throw new Error('APRA request not found for tenant');
       }
 
-      // Insert fulfillment
+      const now = new Date();
+
+      // Create fulfillment
       const result = await client.query<ApraFulfillmentRow>(
         `
         INSERT INTO apra_fulfillments (
-          id, tenant_id, request_id, fulfilled_at, delivery_method, notes, total_fees_cents
+          id, request_id, fulfilled_at, delivery_method, notes, total_fees_cents
         )
-        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
+        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5)
         RETURNING *
         `,
         [
-          ctx.tenantId,
           requestId,
           now,
           input.deliveryMethod,
@@ -533,36 +521,34 @@ export class PostgresApraService implements ApraService {
 
       // Update request timestamp
       await client.query(
-        `UPDATE apra_requests SET updated_at = $3 WHERE tenant_id = $1 AND id = $2`,
-        [ctx.tenantId, requestId, now]
+        `UPDATE apra_requests SET updated_at = $2 WHERE tenant_id = $1 AND id = $3`,
+        [ctx.tenantId, now, requestId]
       );
 
       return this.rowToFulfillment(result.rows[0]);
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // Getters for related data
-  // ---------------------------------------------------------------------------
-
   async getStatusHistory(
     ctx: TenantContext,
     requestId: string
   ): Promise<ApraStatusHistoryEntry[]> {
     return this.db.withTenant(ctx.tenantId, async (client) => {
-      // Verify request exists
-      const check = await client.query(
+      // Verify request exists for tenant
+      const checkResult = await client.query(
         `SELECT id FROM apra_requests WHERE tenant_id = $1 AND id = $2`,
         [ctx.tenantId, requestId]
       );
-      if (check.rows.length === 0) {
+
+      if (checkResult.rows.length === 0) {
         throw new Error('APRA request not found for tenant');
       }
 
       const result = await client.query<ApraStatusHistoryRow>(
-        `SELECT * FROM apra_status_history WHERE tenant_id = $1 AND request_id = $2 ORDER BY changed_at ASC`,
-        [ctx.tenantId, requestId]
+        `SELECT * FROM apra_status_history WHERE request_id = $1 ORDER BY changed_at ASC`,
+        [requestId]
       );
+
       return result.rows.map((row) => this.rowToStatusHistory(row));
     });
   }
@@ -572,19 +558,21 @@ export class PostgresApraService implements ApraService {
     requestId: string
   ): Promise<ApraRequestScope[]> {
     return this.db.withTenant(ctx.tenantId, async (client) => {
-      // Verify request exists
-      const check = await client.query(
+      // Verify request exists for tenant
+      const checkResult = await client.query(
         `SELECT id FROM apra_requests WHERE tenant_id = $1 AND id = $2`,
         [ctx.tenantId, requestId]
       );
-      if (check.rows.length === 0) {
+
+      if (checkResult.rows.length === 0) {
         throw new Error('APRA request not found for tenant');
       }
 
       const result = await client.query<ApraRequestScopeRow>(
-        `SELECT * FROM apra_request_scopes WHERE tenant_id = $1 AND request_id = $2`,
-        [ctx.tenantId, requestId]
+        `SELECT * FROM apra_request_scopes WHERE request_id = $1`,
+        [requestId]
       );
+
       return result.rows.map((row) => this.rowToScope(row));
     });
   }
@@ -594,19 +582,21 @@ export class PostgresApraService implements ApraService {
     requestId: string
   ): Promise<ApraClarification[]> {
     return this.db.withTenant(ctx.tenantId, async (client) => {
-      // Verify request exists
-      const check = await client.query(
+      // Verify request exists for tenant
+      const checkResult = await client.query(
         `SELECT id FROM apra_requests WHERE tenant_id = $1 AND id = $2`,
         [ctx.tenantId, requestId]
       );
-      if (check.rows.length === 0) {
+
+      if (checkResult.rows.length === 0) {
         throw new Error('APRA request not found for tenant');
       }
 
       const result = await client.query<ApraClarificationRow>(
-        `SELECT * FROM apra_clarifications WHERE tenant_id = $1 AND request_id = $2 ORDER BY sent_at ASC`,
-        [ctx.tenantId, requestId]
+        `SELECT * FROM apra_clarifications WHERE request_id = $1 ORDER BY sent_at ASC`,
+        [requestId]
       );
+
       return result.rows.map((row) => this.rowToClarification(row));
     });
   }
@@ -616,19 +606,21 @@ export class PostgresApraService implements ApraService {
     requestId: string
   ): Promise<ApraExemptionCitation[]> {
     return this.db.withTenant(ctx.tenantId, async (client) => {
-      // Verify request exists
-      const check = await client.query(
+      // Verify request exists for tenant
+      const checkResult = await client.query(
         `SELECT id FROM apra_requests WHERE tenant_id = $1 AND id = $2`,
         [ctx.tenantId, requestId]
       );
-      if (check.rows.length === 0) {
+
+      if (checkResult.rows.length === 0) {
         throw new Error('APRA request not found for tenant');
       }
 
       const result = await client.query<ApraExemptionRow>(
-        `SELECT * FROM apra_exemptions WHERE tenant_id = $1 AND request_id = $2`,
-        [ctx.tenantId, requestId]
+        `SELECT * FROM apra_exemptions WHERE request_id = $1 ORDER BY created_at ASC`,
+        [requestId]
       );
+
       return result.rows.map((row) => this.rowToExemption(row));
     });
   }
@@ -638,26 +630,28 @@ export class PostgresApraService implements ApraService {
     requestId: string
   ): Promise<ApraFulfillment[]> {
     return this.db.withTenant(ctx.tenantId, async (client) => {
-      // Verify request exists
-      const check = await client.query(
+      // Verify request exists for tenant
+      const checkResult = await client.query(
         `SELECT id FROM apra_requests WHERE tenant_id = $1 AND id = $2`,
         [ctx.tenantId, requestId]
       );
-      if (check.rows.length === 0) {
+
+      if (checkResult.rows.length === 0) {
         throw new Error('APRA request not found for tenant');
       }
 
       const result = await client.query<ApraFulfillmentRow>(
-        `SELECT * FROM apra_fulfillments WHERE tenant_id = $1 AND request_id = $2`,
-        [ctx.tenantId, requestId]
+        `SELECT * FROM apra_fulfillments WHERE request_id = $1 ORDER BY fulfilled_at ASC`,
+        [requestId]
       );
+
       return result.rows.map((row) => this.rowToFulfillment(row));
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // Row Mappers
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // ROW CONVERTERS
+  // ===========================================================================
 
   private rowToRequest(row: ApraRequestRow): ApraRequest {
     return {
@@ -692,8 +686,8 @@ export class PostgresApraService implements ApraService {
       id: row.id,
       requestId: row.request_id,
       recordType: row.record_type ?? undefined,
-      dateRangeStart: row.date_range_start?.toISOString().split('T')[0],
-      dateRangeEnd: row.date_range_end?.toISOString().split('T')[0],
+      dateRangeStart: row.date_range_start?.toISOString(),
+      dateRangeEnd: row.date_range_end?.toISOString(),
       custodians: row.custodians ?? undefined,
       keywords: row.keywords ?? undefined,
     };
@@ -703,7 +697,7 @@ export class PostgresApraService implements ApraService {
     return {
       id: row.id,
       requestId: row.request_id,
-      oldStatus: row.old_status as ApraRequestStatus | undefined,
+      oldStatus: (row.old_status as ApraRequestStatus) ?? undefined,
       newStatus: row.new_status as ApraRequestStatus,
       changedAt: row.changed_at.toISOString(),
       changedByUserId: row.changed_by_user_id ?? undefined,
@@ -738,7 +732,7 @@ export class PostgresApraService implements ApraService {
       id: row.id,
       requestId: row.request_id,
       fulfilledAt: row.fulfilled_at.toISOString(),
-      deliveryMethod: row.delivery_method as ApraFulfillment['deliveryMethod'],
+      deliveryMethod: row.delivery_method as 'EMAIL' | 'PORTAL' | 'MAIL' | 'IN_PERSON',
       notes: row.notes ?? undefined,
       totalFeesCents: row.total_fees_cents ?? undefined,
     };

@@ -1,407 +1,359 @@
 // src/engines/records/apra-notification.service.ts
 //
-// APRA-specific notification service for deadline alerts.
-// Integrates ApraService with NotificationService to send:
-// - Deadline approaching alerts (3 days, 1 day, overdue)
-// - Status change notifications
-// - Clarification received alerts
+// APRA-specific notification service for deadline alerts and status updates.
 
 import { TenantContext } from '../../core/tenancy/tenancy.types';
 import { NotificationService } from '../../core/notifications/notification.service';
-import { CreateNotificationInput, NotificationPriority } from '../../core/notifications/notification.types';
 import { ApraService } from './apra.service';
 import { ApraRequest, ApraRequestStatus } from './apra.types';
 
+// ===========================================================================
+// TYPES
+// ===========================================================================
+
 /**
- * Configuration for APRA notifications.
+ * Configuration for the APRA notification service.
  */
 export interface ApraNotificationConfig {
-  /** Days before deadline to send first warning (default: 3) */
-  firstWarningDays?: number;
-  /** Days before deadline to send urgent warning (default: 1) */
-  urgentWarningDays?: number;
-  /** Whether to send notifications for status changes (default: true) */
-  notifyOnStatusChange?: boolean;
-  /** Whether to send notifications for new requests (default: true) */
-  notifyOnNewRequest?: boolean;
-  /** User IDs who should receive APRA notifications */
-  recipientUserIds: string[];
-  /** Email addresses who should receive APRA notifications */
-  recipientEmails?: string[];
+  /** Number of days before deadline to send warning (default: 2) */
+  warningDays: number;
+  /** Number of days before deadline to send urgent warning (default: 1) */
+  urgentDays: number;
+  /** Default email for staff notifications */
+  defaultStaffEmail?: string;
+  /** Default user ID for staff notifications */
+  defaultStaffUserId?: string;
 }
 
 /**
- * Result of checking and sending deadline notifications.
+ * Default configuration.
+ */
+export const DEFAULT_APRA_NOTIFICATION_CONFIG: ApraNotificationConfig = {
+  warningDays: 2,
+  urgentDays: 1,
+};
+
+/**
+ * Alert for a request approaching or past deadline.
+ */
+export interface DeadlineAlert {
+  requestId: string;
+  requesterName: string;
+  statutoryDeadlineAt: string;
+  status: ApraRequestStatus;
+  daysRemaining: number;
+}
+
+/**
+ * Result from checking deadlines.
  */
 export interface DeadlineCheckResult {
   /** Number of requests checked */
   requestsChecked: number;
+  /** Requests approaching deadline (within warning window) */
+  approachingDeadline: DeadlineAlert[];
+  /** Requests past deadline */
+  pastDeadline: DeadlineAlert[];
   /** Number of notifications sent */
   notificationsSent: number;
-  /** Details of notifications sent */
-  notifications: {
-    requestId: string;
-    requesterName: string;
-    daysUntilDeadline: number;
-    priority: NotificationPriority;
-  }[];
+  /** Timestamp of this check */
+  checkedAt: string;
 }
 
+// ===========================================================================
+// APRA NOTIFICATION SERVICE
+// ===========================================================================
+
 /**
- * Service for managing APRA-related notifications.
+ * APRA-specific notification service.
  *
- * This service:
- * - Checks for approaching deadlines and sends warnings
- * - Sends notifications on status changes
- * - Integrates with the generic NotificationService
+ * Provides:
+ * - Deadline checking and alerts (IC 5-14-3-9 7 business day requirement)
+ * - Status change notifications
+ * - New request notifications
+ * - Clarification received notifications
  *
  * @example
  * const apraNotifications = new ApraNotificationService(
  *   apraService,
- *   notificationService,
- *   { recipientUserIds: ['clerk-id-1'] }
+ *   notificationService
  * );
  *
- * // Run daily to check for approaching deadlines
+ * // Check for approaching deadlines
  * const result = await apraNotifications.checkDeadlines(ctx);
- * console.log(`Sent ${result.notificationsSent} deadline warnings`);
+ * console.log(`${result.notificationsSent} notifications sent`);
  */
 export class ApraNotificationService {
-  private readonly config: Required<ApraNotificationConfig>;
+  private config: ApraNotificationConfig;
 
   constructor(
     private readonly apraService: ApraService,
-    private readonly notificationService: NotificationService,
-    config: ApraNotificationConfig
+    private readonly notifications: NotificationService,
+    config: Partial<ApraNotificationConfig> = {}
   ) {
-    this.config = {
-      firstWarningDays: config.firstWarningDays ?? 3,
-      urgentWarningDays: config.urgentWarningDays ?? 1,
-      notifyOnStatusChange: config.notifyOnStatusChange ?? true,
-      notifyOnNewRequest: config.notifyOnNewRequest ?? true,
-      recipientUserIds: config.recipientUserIds,
-      recipientEmails: config.recipientEmails ?? [],
-    };
+    this.config = { ...DEFAULT_APRA_NOTIFICATION_CONFIG, ...config };
   }
 
   /**
-   * Check all active requests for approaching deadlines and send notifications.
+   * Check all open requests for approaching or past deadlines.
    *
-   * Should be called periodically (e.g., daily) to catch approaching deadlines.
+   * Sends notifications for requests within the warning window.
    *
    * @param ctx - Tenant context
-   * @returns Summary of checks and notifications sent
+   * @returns Summary of deadline check results
    */
   async checkDeadlines(ctx: TenantContext): Promise<DeadlineCheckResult> {
-    const now = new Date();
-    const result: DeadlineCheckResult = {
-      requestsChecked: 0,
-      notificationsSent: 0,
-      notifications: [],
-    };
-
-    // Get all active requests (not fulfilled, denied, or closed)
-    const activeStatuses: ApraRequestStatus[] = [
+    // Get all open requests (not closed, fulfilled, or denied)
+    const openStatuses: ApraRequestStatus[] = [
       'RECEIVED',
-      'IN_REVIEW',
       'NEEDS_CLARIFICATION',
+      'IN_REVIEW',
       'PARTIALLY_FULFILLED',
     ];
 
     const requests = await this.apraService.listRequests(ctx, {
-      status: activeStatuses,
+      status: openStatuses,
     });
 
-    result.requestsChecked = requests.length;
+    const now = new Date();
+    const approaching: DeadlineAlert[] = [];
+    const pastDeadline: DeadlineAlert[] = [];
+    let notificationsSent = 0;
 
     for (const summary of requests) {
-      if (!summary.statutoryDeadlineAt) {
-        continue;
-      }
+      if (!summary.statutoryDeadlineAt) continue;
 
+      const deadline = new Date(summary.statutoryDeadlineAt);
+      const daysRemaining = this.calculateDaysRemaining(now, deadline);
+
+      // Get full request for details
       const request = await this.apraService.getRequest(ctx, summary.id);
-      if (!request) {
-        continue;
-      }
+      if (!request) continue;
 
-      const deadline = new Date(request.statutoryDeadlineAt!);
-      const daysUntilDeadline = Math.ceil(
-        (deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-      );
-
-      // Determine if notification is needed and at what priority
-      const shouldNotify = this.shouldSendDeadlineNotification(daysUntilDeadline);
-      if (!shouldNotify) {
-        continue;
-      }
-
-      const priority = this.getDeadlinePriority(daysUntilDeadline);
-      await this.sendDeadlineNotification(ctx, request, daysUntilDeadline, priority);
-
-      result.notificationsSent++;
-      result.notifications.push({
+      const alert: DeadlineAlert = {
         requestId: request.id,
         requesterName: request.requesterName,
-        daysUntilDeadline,
-        priority,
-      });
+        statutoryDeadlineAt: request.statutoryDeadlineAt!,
+        status: request.status,
+        daysRemaining,
+      };
+
+      if (daysRemaining < 0) {
+        pastDeadline.push(alert);
+        await this.sendDeadlineNotification(ctx, request, 'past_due');
+        notificationsSent++;
+      } else if (daysRemaining <= this.config.urgentDays) {
+        approaching.push(alert);
+        await this.sendDeadlineNotification(ctx, request, 'urgent');
+        notificationsSent++;
+      } else if (daysRemaining <= this.config.warningDays) {
+        approaching.push(alert);
+        await this.sendDeadlineNotification(ctx, request, 'warning');
+        notificationsSent++;
+      }
     }
 
-    return result;
+    return {
+      requestsChecked: requests.length,
+      approachingDeadline: approaching,
+      pastDeadline,
+      notificationsSent,
+      checkedAt: now.toISOString(),
+    };
   }
 
   /**
-   * Send notification when a new APRA request is received.
+   * Notify staff of a new APRA request.
    *
    * @param ctx - Tenant context
    * @param request - The new request
    */
   async notifyNewRequest(ctx: TenantContext, request: ApraRequest): Promise<void> {
-    if (!this.config.notifyOnNewRequest) {
-      return;
-    }
-
-    const deadline = request.statutoryDeadlineAt
-      ? new Date(request.statutoryDeadlineAt).toLocaleDateString()
-      : 'Not set';
-
-    const input: CreateNotificationInput = {
-      category: 'APRA_STATUS',
-      priority: 'MEDIUM',
-      title: `New APRA Request: ${request.requesterName}`,
-      body: `A new APRA request has been received.
-
-**Requester:** ${request.requesterName}
-**Received:** ${new Date(request.receivedAt).toLocaleDateString()}
-**Deadline:** ${deadline}
-
-**Request:**
-${request.description}
-
-Please review and begin processing within the statutory deadline.`,
-      recipientUserIds: this.config.recipientUserIds,
-      recipientEmails: this.config.recipientEmails,
-      referenceId: request.id,
-      referenceType: 'APRA_REQUEST',
-      metadata: {
-        requestId: request.id,
-        requesterName: request.requesterName,
-        event: 'NEW_REQUEST',
-      },
-    };
-
-    await this.notificationService.createNotification(ctx, input);
+    await this.notifications.send(ctx, {
+      type: 'apra_new_request',
+      subject: `New APRA Request from ${request.requesterName}`,
+      body: this.formatNewRequestBody(request),
+      priority: 'normal',
+      channels: ['email', 'in_app'],
+      recipientUserId: this.config.defaultStaffUserId,
+      recipientEmail: this.config.defaultStaffEmail,
+      relatedEntityId: request.id,
+      relatedEntityType: 'apra_request',
+    });
   }
 
   /**
-   * Send notification when a request's status changes.
+   * Notify staff of a status change.
    *
    * @param ctx - Tenant context
-   * @param request - The request
+   * @param request - The updated request
    * @param oldStatus - Previous status
-   * @param newStatus - New status
-   * @param note - Optional note about the change
    */
   async notifyStatusChange(
     ctx: TenantContext,
     request: ApraRequest,
-    oldStatus: ApraRequestStatus,
-    newStatus: ApraRequestStatus,
-    note?: string
+    oldStatus: ApraRequestStatus
   ): Promise<void> {
-    if (!this.config.notifyOnStatusChange) {
-      return;
-    }
-
-    const statusDescriptions: Record<ApraRequestStatus, string> = {
-      RECEIVED: 'Received',
-      NEEDS_CLARIFICATION: 'Needs Clarification',
-      IN_REVIEW: 'In Review',
-      PARTIALLY_FULFILLED: 'Partially Fulfilled',
-      FULFILLED: 'Fulfilled',
-      DENIED: 'Denied',
-      CLOSED: 'Closed',
-    };
-
-    const input: CreateNotificationInput = {
-      category: 'APRA_STATUS',
-      priority: this.getStatusChangePriority(newStatus),
-      title: `APRA Status Change: ${statusDescriptions[newStatus]}`,
-      body: `APRA request status has been updated.
-
-**Request ID:** ${request.id}
-**Requester:** ${request.requesterName}
-**Status Changed:** ${statusDescriptions[oldStatus]} → ${statusDescriptions[newStatus]}
-${note ? `\n**Note:** ${note}` : ''}
-
-${this.getStatusChangeGuidance(newStatus)}`,
-      recipientUserIds: this.config.recipientUserIds,
-      recipientEmails: this.config.recipientEmails,
-      referenceId: request.id,
-      referenceType: 'APRA_REQUEST',
-      metadata: {
-        requestId: request.id,
-        requesterName: request.requesterName,
-        oldStatus,
-        newStatus,
-        event: 'STATUS_CHANGE',
-      },
-    };
-
-    await this.notificationService.createNotification(ctx, input);
+    await this.notifications.send(ctx, {
+      type: 'apra_status_change',
+      subject: `APRA Request Status Changed: ${oldStatus} → ${request.status}`,
+      body: this.formatStatusChangeBody(request, oldStatus),
+      priority: 'normal',
+      channels: ['in_app'],
+      recipientUserId: this.config.defaultStaffUserId,
+      relatedEntityId: request.id,
+      relatedEntityType: 'apra_request',
+      metadata: { oldStatus, newStatus: request.status },
+    });
   }
 
   /**
-   * Send notification when clarification is received from requester.
+   * Notify staff that a clarification response was received.
    *
    * @param ctx - Tenant context
    * @param request - The request
-   * @param clarificationText - The clarification provided
+   * @param clarificationResponse - The requester's response
    */
   async notifyClarificationReceived(
     ctx: TenantContext,
     request: ApraRequest,
-    clarificationText: string
+    clarificationResponse: string
   ): Promise<void> {
-    const deadline = request.statutoryDeadlineAt
-      ? new Date(request.statutoryDeadlineAt).toLocaleDateString()
-      : 'Not set';
-
-    const input: CreateNotificationInput = {
-      category: 'APRA_STATUS',
-      priority: 'HIGH',
-      title: `Clarification Received: ${request.requesterName}`,
-      body: `The requester has provided clarification for their APRA request.
-
-**Request ID:** ${request.id}
-**Requester:** ${request.requesterName}
-**New Deadline:** ${deadline}
-
-**Clarification:**
-${clarificationText}
-
-The statutory deadline has been reset. Please resume processing this request.`,
-      recipientUserIds: this.config.recipientUserIds,
-      recipientEmails: this.config.recipientEmails,
-      referenceId: request.id,
-      referenceType: 'APRA_REQUEST',
-      metadata: {
-        requestId: request.id,
-        requesterName: request.requesterName,
-        event: 'CLARIFICATION_RECEIVED',
-      },
-    };
-
-    await this.notificationService.createNotification(ctx, input);
+    await this.notifications.send(ctx, {
+      type: 'apra_clarification_received',
+      subject: `Clarification Received: ${request.requesterName}`,
+      body: this.formatClarificationReceivedBody(request, clarificationResponse),
+      priority: 'high',
+      channels: ['email', 'in_app'],
+      recipientUserId: this.config.defaultStaffUserId,
+      recipientEmail: this.config.defaultStaffEmail,
+      relatedEntityId: request.id,
+      relatedEntityType: 'apra_request',
+    });
   }
 
   // ---------- Private helpers ----------
 
-  private shouldSendDeadlineNotification(daysUntilDeadline: number): boolean {
-    // Send if overdue or at warning thresholds
-    return (
-      daysUntilDeadline <= 0 ||
-      daysUntilDeadline === this.config.urgentWarningDays ||
-      daysUntilDeadline === this.config.firstWarningDays
-    );
-  }
-
-  private getDeadlinePriority(daysUntilDeadline: number): NotificationPriority {
-    if (daysUntilDeadline <= 0) {
-      return 'URGENT';
-    }
-    if (daysUntilDeadline <= this.config.urgentWarningDays) {
-      return 'HIGH';
-    }
-    return 'MEDIUM';
-  }
-
   private async sendDeadlineNotification(
     ctx: TenantContext,
     request: ApraRequest,
-    daysUntilDeadline: number,
-    priority: NotificationPriority
+    urgency: 'warning' | 'urgent' | 'past_due'
   ): Promise<void> {
-    const deadline = request.statutoryDeadlineAt
+    const priority = urgency === 'past_due' ? 'urgent' : urgency === 'urgent' ? 'high' : 'normal';
+
+    const subject = this.formatDeadlineSubject(request, urgency);
+    const body = this.formatDeadlineBody(request, urgency);
+
+    await this.notifications.send(ctx, {
+      type: `apra_deadline_${urgency}`,
+      subject,
+      body,
+      priority,
+      channels: ['email', 'in_app'],
+      recipientUserId: this.config.defaultStaffUserId,
+      recipientEmail: this.config.defaultStaffEmail,
+      relatedEntityId: request.id,
+      relatedEntityType: 'apra_request',
+      metadata: { urgency },
+    });
+  }
+
+  private formatDeadlineSubject(
+    request: ApraRequest,
+    urgency: 'warning' | 'urgent' | 'past_due'
+  ): string {
+    switch (urgency) {
+      case 'past_due':
+        return `[OVERDUE] APRA Request ${request.id.slice(0, 8)} Past Deadline`;
+      case 'urgent':
+        return `[URGENT] APRA Request ${request.id.slice(0, 8)} Due Tomorrow`;
+      case 'warning':
+        return `APRA Request ${request.id.slice(0, 8)} Due in 2 Days`;
+    }
+  }
+
+  private formatDeadlineBody(
+    request: ApraRequest,
+    urgency: 'warning' | 'urgent' | 'past_due'
+  ): string {
+    const deadlineDate = request.statutoryDeadlineAt
       ? new Date(request.statutoryDeadlineAt).toLocaleDateString()
       : 'Unknown';
 
-    let title: string;
-    let urgencyMessage: string;
-
-    if (daysUntilDeadline <= 0) {
-      title = `⚠️ APRA DEADLINE OVERDUE: ${request.requesterName}`;
-      urgencyMessage = `**This request is ${Math.abs(daysUntilDeadline)} day(s) overdue!**
-
-Per IC 5-14-3-9, the agency must respond within 7 business days. Failure to respond timely may result in legal consequences.`;
-    } else if (daysUntilDeadline === 1) {
-      title = `🔴 APRA Deadline Tomorrow: ${request.requesterName}`;
-      urgencyMessage = `**The statutory deadline is TOMORROW.**
-
-Please prioritize completing this request today to ensure timely compliance.`;
-    } else {
-      title = `🟡 APRA Deadline Approaching: ${request.requesterName}`;
-      urgencyMessage = `**${daysUntilDeadline} business days until the statutory deadline.**
-
-Please ensure this request is on track for timely completion.`;
+    let intro: string;
+    switch (urgency) {
+      case 'past_due':
+        intro = `The statutory deadline for this request has PASSED.`;
+        break;
+      case 'urgent':
+        intro = `This request is due TOMORROW per IC 5-14-3-9.`;
+        break;
+      case 'warning':
+        intro = `This request is due in 2 days per IC 5-14-3-9.`;
+        break;
     }
 
-    const input: CreateNotificationInput = {
-      category: 'APRA_DEADLINE',
-      priority,
-      title,
-      body: `${urgencyMessage}
+    return `${intro}
 
-**Request ID:** ${request.id}
-**Requester:** ${request.requesterName}
-**Deadline:** ${deadline}
-**Current Status:** ${request.status}
+Request ID: ${request.id}
+Requester: ${request.requesterName}
+Received: ${new Date(request.receivedAt).toLocaleDateString()}
+Deadline: ${deadlineDate}
+Status: ${request.status}
 
-**Request:**
-${request.description.substring(0, 500)}${request.description.length > 500 ? '...' : ''}`,
-      recipientUserIds: this.config.recipientUserIds,
-      recipientEmails: this.config.recipientEmails,
-      referenceId: request.id,
-      referenceType: 'APRA_REQUEST',
-      metadata: {
-        requestId: request.id,
-        requesterName: request.requesterName,
-        daysUntilDeadline,
-        event: 'DEADLINE_WARNING',
-      },
-    };
+Description:
+"${request.description}"
 
-    await this.notificationService.createNotification(ctx, input);
+Please take action to ensure timely response.`;
   }
 
-  private getStatusChangePriority(newStatus: ApraRequestStatus): NotificationPriority {
-    switch (newStatus) {
-      case 'DENIED':
-        return 'HIGH';
-      case 'NEEDS_CLARIFICATION':
-        return 'MEDIUM';
-      case 'FULFILLED':
-      case 'CLOSED':
-        return 'LOW';
-      default:
-        return 'MEDIUM';
-    }
+  private formatNewRequestBody(request: ApraRequest): string {
+    return `A new public records request has been received.
+
+Request ID: ${request.id}
+Requester: ${request.requesterName}
+${request.requesterEmail ? `Email: ${request.requesterEmail}` : ''}
+Received: ${new Date(request.receivedAt).toLocaleDateString()}
+Deadline: ${request.statutoryDeadlineAt ? new Date(request.statutoryDeadlineAt).toLocaleDateString() : 'Not set'}
+
+Description:
+"${request.description}"
+
+Per IC 5-14-3-9, you have 7 business days to respond.`;
   }
 
-  private getStatusChangeGuidance(newStatus: ApraRequestStatus): string {
-    switch (newStatus) {
-      case 'NEEDS_CLARIFICATION':
-        return 'The deadline clock is paused until the requester responds.';
-      case 'IN_REVIEW':
-        return 'Staff should search for and review responsive records.';
-      case 'FULFILLED':
-        return 'The request has been completed. No further action needed.';
-      case 'DENIED':
-        return 'Ensure the denial letter includes specific exemption citations per IC 5-14-3-4.';
-      case 'CLOSED':
-        return 'The request has been administratively closed.';
-      default:
-        return '';
-    }
+  private formatStatusChangeBody(
+    request: ApraRequest,
+    oldStatus: ApraRequestStatus
+  ): string {
+    return `Request ID: ${request.id}
+Requester: ${request.requesterName}
+Status: ${oldStatus} → ${request.status}
+Updated: ${new Date(request.updatedAt).toLocaleString()}`;
+  }
+
+  private formatClarificationReceivedBody(
+    request: ApraRequest,
+    clarificationResponse: string
+  ): string {
+    return `The requester has responded to a clarification request.
+
+Request ID: ${request.id}
+Requester: ${request.requesterName}
+
+Clarification Response:
+"${clarificationResponse}"
+
+Note: The 7-day deadline clock restarts from the clarification response date per IC 5-14-3-9(b).`;
+  }
+
+  /**
+   * Calculate days remaining until deadline.
+   * Returns negative number if past deadline.
+   */
+  private calculateDaysRemaining(now: Date, deadline: Date): number {
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const diffMs = deadline.getTime() - now.getTime();
+    return Math.floor(diffMs / msPerDay);
   }
 }

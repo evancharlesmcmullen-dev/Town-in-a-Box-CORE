@@ -112,11 +112,8 @@ export type {
   FeeCategory,
   FeeItem,
   FeeSchedule,
-  FeeCalculationParameter,
-  FeeCalculationContext,
   FeeCalculationInput,
   FeeCalculationLine,
-  FeeDiscountLine,
   FeeCalculationResult,
 } from './engines/fees/fee.types';
 
@@ -196,13 +193,13 @@ export { PostgresApraService } from './engines/records/postgres-apra.service';
 // APRA Fee Calculator
 export {
   ApraFeeCalculator,
-  APRA_FEE_CODES,
-  DEFAULT_APRA_RATES,
-  getDefaultApraFeeItems,
+  DEFAULT_INDIANA_FEE_SCHEDULE,
 } from './engines/records/apra-fee.calculator';
 export type {
   ApraFeeInput,
   ApraFeeResult,
+  ApraFeeLine,
+  ApraFeeSchedule,
 } from './engines/records/apra-fee.calculator';
 
 // APRA Calendar utilities (for deadline calculations)
@@ -220,17 +217,15 @@ export type { ApraCalendarOptions } from './core/calendar/open-door.calendar';
 export type {
   NotificationChannel,
   NotificationPriority,
-  NotificationCategory,
+  NotificationStatus,
   Notification,
   CreateNotificationInput,
-  NotificationDeliveryStatus,
-  NotificationPreferences,
+  NotificationFilter,
 } from './core/notifications/notification.types';
 
 // Service interface
 export type {
   NotificationService,
-  NotificationFilter,
 } from './core/notifications/notification.service';
 
 // Implementation
@@ -242,6 +237,7 @@ export { ApraNotificationService } from './engines/records/apra-notification.ser
 export type {
   ApraNotificationConfig,
   DeadlineCheckResult,
+  DeadlineAlert,
 } from './engines/records/apra-notification.service';
 
 // =============================================================================

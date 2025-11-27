@@ -1,97 +1,28 @@
 // src/engines/records/ai-apra.service.impl.ts
 //
 // AI-enhanced APRA service implementation.
+// Wraps any ApraService with AI capabilities.
 
 import { TenantContext } from '../../core/tenancy/tenancy.types';
 import { AiCoreService } from '../../core/ai/ai.service';
-import { ApraRequest, ApraExemptionCitation, ApraFulfillment } from './apra.types';
+import { ApraService } from './apra.service';
+import { ApraRequest } from './apra.types';
 import {
-  ApraService,
   AiApraService,
   ParticularityAnalysis,
   SuggestedExemption,
   ScopeAnalysis,
-} from './apra.service';
-
-/**
- * Indiana APRA exemptions catalog for AI reference.
- * Based on IC 5-14-3-4.
- */
-const INDIANA_EXEMPTIONS = [
-  {
-    citation: 'IC 5-14-3-4(a)(1)',
-    description: 'Records expressly prohibited from disclosure by federal law.',
-    keywords: ['federal', 'hipaa', 'ferpa', 'classified', 'national security'],
-  },
-  {
-    citation: 'IC 5-14-3-4(a)(2)',
-    description: 'Records expressly prohibited from disclosure by state statute.',
-    keywords: ['confidential', 'statute', 'state law'],
-  },
-  {
-    citation: 'IC 5-14-3-4(b)(1)',
-    description: 'Investigatory records of law enforcement agencies.',
-    keywords: ['investigation', 'police', 'criminal', 'law enforcement', 'detective'],
-  },
-  {
-    citation: 'IC 5-14-3-4(b)(2)',
-    description: 'Work product of an attorney representing the agency.',
-    keywords: ['attorney', 'legal', 'litigation', 'work product', 'counsel'],
-  },
-  {
-    citation: 'IC 5-14-3-4(b)(3)',
-    description: 'Test questions, scoring keys, and other examination data.',
-    keywords: ['test', 'exam', 'scoring', 'questions', 'answers'],
-  },
-  {
-    citation: 'IC 5-14-3-4(b)(6)',
-    description: 'Personnel files of public employees except for basic information.',
-    keywords: ['personnel', 'employee', 'hr', 'human resources', 'performance', 'discipline'],
-  },
-  {
-    citation: 'IC 5-14-3-4(b)(8)',
-    description: 'Administrative or technical information that would jeopardize security.',
-    keywords: ['security', 'alarm', 'password', 'vulnerability', 'access codes'],
-  },
-  {
-    citation: 'IC 5-14-3-4(b)(14)',
-    description: 'Deliberative material (advisory or deliberative communications).',
-    keywords: ['deliberative', 'advisory', 'draft', 'internal discussion', 'recommendation'],
-  },
-  {
-    citation: 'IC 5-14-3-4(b)(19)',
-    description: 'Social security numbers.',
-    keywords: ['social security', 'ssn', 'social security number'],
-  },
-  {
-    citation: 'IC 5-14-3-4(b)(26)',
-    description: 'Home addresses of law enforcement officers.',
-    keywords: ['home address', 'officer', 'police', 'personal address'],
-  },
-];
-
-/**
- * System prompt for APRA analysis tasks.
- */
-const APRA_SYSTEM_PROMPT = `You are an expert in Indiana's Access to Public Records Act (APRA), codified at IC 5-14-3.
-
-Key APRA requirements:
-- Agencies must respond within 7 business days (IC 5-14-3-9)
-- Requests must "reasonably particularly" identify records (IC 5-14-3-3(a))
-- Exemptions from disclosure are listed in IC 5-14-3-4
-- Agencies may charge reasonable copying fees
-
-When analyzing requests, be helpful to public agencies while respecting the public's right to access government records. Favor disclosure when exemptions don't clearly apply.`;
+} from './ai-apra.service';
 
 /**
  * Wraps any ApraService implementation with AI capabilities.
  *
  * Uses composition to add AI features to an existing APRA service.
- * Requires an AiCoreService for natural language processing.
+ * Requires an AiCoreService for LLM-powered analysis.
  *
  * @example
  * const baseService = new InMemoryApraService();
- * const aiService = new AiApraServiceImpl(baseService, aiCore);
+ * const aiService = new AiApraServiceImpl(baseService, aiCoreService);
  * const analysis = await aiService.analyzeParticularity(ctx, requestId);
  */
 export class AiApraServiceImpl implements AiApraService {
@@ -129,46 +60,51 @@ export class AiApraServiceImpl implements AiApraService {
 
     const scopes = await this.getScopes(ctx, requestId);
     const scopeText = scopes.length > 0
-      ? `\n\nScopes provided:\n${scopes.map(s => `- Type: ${s.recordType ?? 'not specified'}, Date range: ${s.dateRangeStart ?? 'not specified'} to ${s.dateRangeEnd ?? 'not specified'}`).join('\n')}`
+      ? `\n\nAdditional scope details:\n${JSON.stringify(scopes, null, 2)}`
       : '';
 
-    const prompt = `Analyze whether this APRA request meets the "reasonably particular" requirement under IC 5-14-3-3(a).
+    const prompt = `You are a legal analyst specializing in Indiana public records law (APRA - IC 5-14-3).
+
+Analyze the following public records request to determine if it meets the "reasonably particular" requirement under IC 5-14-3-3(a).
+
+A request is "reasonably particular" if it:
+- Identifies the records with enough specificity that staff can locate them
+- Does not require staff to conduct research or answer questions
+- Is not so broad that it would require an unreasonable amount of staff time
 
 Request description:
-"${request.description}"${scopeText}
-
-A request is "reasonably particular" if it identifies specific records or categories of records that can be located with reasonable effort. Vague requests like "all records about topic X" without date ranges or other limiting factors may not be particular enough.
+"${request.description}"
+${scopeText}
 
 Respond in JSON format:
 {
-  "isParticular": boolean,
-  "confidence": number (0-1),
-  "reasoning": "explanation of assessment",
-  "suggestedClarifications": ["question 1", "question 2"] // only if not particular
+  "isParticular": true/false,
+  "confidence": 0.0-1.0,
+  "reasoning": "explanation of your assessment",
+  "suggestedClarifications": ["optional array of clarifying questions if not particular"]
 }`;
 
-    const response = await this.aiCore.chat(ctx, {
-      messages: [
-        { role: 'system', content: APRA_SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
+    const response = await this.aiCore.complete(ctx, prompt, {
       temperature: 0.3,
+      maxTokens: 1000,
     });
 
     try {
-      const result = JSON.parse(response.content);
+      const parsed = JSON.parse(this.extractJson(response));
       return {
-        isParticular: result.isParticular ?? true,
-        confidence: result.confidence ?? 0.5,
-        reasoning: result.reasoning ?? 'Unable to parse AI response',
-        suggestedClarifications: result.suggestedClarifications,
+        isParticular: Boolean(parsed.isParticular),
+        confidence: Number(parsed.confidence) || 0.5,
+        reasoning: String(parsed.reasoning || 'Unable to assess'),
+        suggestedClarifications: Array.isArray(parsed.suggestedClarifications)
+          ? parsed.suggestedClarifications.map(String)
+          : undefined,
       };
     } catch {
       // Fallback if JSON parsing fails
       return {
         isParticular: true,
-        confidence: 0.3,
-        reasoning: 'AI analysis inconclusive. Manual review recommended.',
+        confidence: 0.5,
+        reasoning: 'Unable to parse AI response. Defaulting to particular.',
       };
     }
   }
@@ -184,53 +120,60 @@ Respond in JSON format:
 
     const scopes = await this.getScopes(ctx, requestId);
     const scopeText = scopes.length > 0
-      ? `\n\nRecord types/scopes requested:\n${scopes.map(s => `- ${s.recordType ?? 'general'}: ${s.keywords?.join(', ') ?? 'no keywords'}`).join('\n')}`
+      ? `\n\nScope details:\n${JSON.stringify(scopes, null, 2)}`
       : '';
 
-    const exemptionCatalog = INDIANA_EXEMPTIONS.map(
-      e => `${e.citation}: ${e.description}`
-    ).join('\n');
+    const prompt = `You are a legal analyst specializing in Indiana public records law (APRA - IC 5-14-3).
 
-    const prompt = `Analyze this APRA request and suggest any exemptions from IC 5-14-3-4 that may apply.
+Analyze the following public records request and suggest which exemptions under IC 5-14-3-4 might apply.
+
+Common exemptions include:
+- IC 5-14-3-4(a)(1): Trade secrets
+- IC 5-14-3-4(a)(2): Legislative matters
+- IC 5-14-3-4(a)(3): Executive privilege
+- IC 5-14-3-4(b)(1): Personnel file of public employee
+- IC 5-14-3-4(b)(6): Attorney-client privileged information
+- IC 5-14-3-4(b)(8): Social Security numbers
+- IC 5-14-3-4(b)(14): Investigatory records
+- IC 5-14-3-4(b)(19): Work product of an attorney
 
 Request description:
-"${request.description}"${scopeText}
-
-Available exemptions:
-${exemptionCatalog}
-
-Only suggest exemptions that reasonably might apply based on the request content. Favor disclosure - only suggest exemptions where there's a reasonable basis.
+"${request.description}"
+${scopeText}
 
 Respond in JSON format:
 {
   "exemptions": [
     {
-      "citation": "IC 5-14-3-4(x)(y)",
-      "description": "brief description",
-      "confidence": number (0-1),
-      "reasoning": "why this might apply"
+      "citation": "IC 5-14-3-4(b)(6)",
+      "description": "Plain English explanation",
+      "confidence": 0.0-1.0,
+      "reasoning": "Why this might apply"
     }
   ]
 }
 
-If no exemptions clearly apply, return {"exemptions": []}.`;
+Only include exemptions that have a reasonable chance of applying. If none apply, return an empty array.`;
 
-    const response = await this.aiCore.chat(ctx, {
-      messages: [
-        { role: 'system', content: APRA_SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
+    const response = await this.aiCore.complete(ctx, prompt, {
       temperature: 0.3,
+      maxTokens: 1500,
     });
 
     try {
-      const result = JSON.parse(response.content);
-      return (result.exemptions ?? []).map((e: Record<string, unknown>) => ({
-        citation: String(e.citation ?? ''),
-        description: String(e.description ?? ''),
-        confidence: Number(e.confidence ?? 0.5),
-        reasoning: String(e.reasoning ?? ''),
-      }));
+      const parsed = JSON.parse(this.extractJson(response));
+      if (Array.isArray(parsed.exemptions)) {
+        return parsed.exemptions.map((e: unknown) => {
+          const exemption = e as Record<string, unknown>;
+          return {
+            citation: String(exemption.citation || ''),
+            description: String(exemption.description || ''),
+            confidence: Number(exemption.confidence) || undefined,
+            reasoning: String(exemption.reasoning || '') || undefined,
+          };
+        });
+      }
+      return [];
     } catch {
       return [];
     }
@@ -245,58 +188,54 @@ If no exemptions clearly apply, return {"exemptions": []}.`;
       throw new Error('APRA request not found');
     }
 
-    const prompt = `Extract scope details from this APRA request to help staff locate records.
+    const prompt = `You are a records management specialist helping to scope a public records request.
+
+Analyze the following request and extract structured scope information to help staff locate responsive records.
 
 Request description:
 "${request.description}"
 
-Identify:
-1. Types of records being requested (emails, contracts, meeting minutes, etc.)
-2. Departments or people who might have custody of these records
-3. Keywords that would help search for these records
-4. Any date ranges mentioned
-
 Respond in JSON format:
 {
-  "recordTypes": ["type1", "type2"],
-  "suggestedCustodians": ["department1", "person/role"],
-  "keywords": ["keyword1", "keyword2"],
+  "recordTypes": ["email", "contract", "invoice"],
+  "suggestedCustodians": ["clerk-treasurer", "police-department"],
+  "keywords": ["budget", "2024", "construction"],
   "dateRange": {
-    "start": "YYYY-MM-DD or null",
-    "end": "YYYY-MM-DD or null"
+    "start": "2024-01-01",
+    "end": "2024-12-31"
   },
-  "confidence": number (0-1)
-}`;
+  "confidence": 0.0-1.0
+}
 
-    const response = await this.aiCore.chat(ctx, {
-      messages: [
-        { role: 'system', content: APRA_SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
+Only include fields where you have reasonable confidence. Use null for uncertain fields.`;
+
+    const response = await this.aiCore.complete(ctx, prompt, {
       temperature: 0.3,
+      maxTokens: 1000,
     });
 
     try {
-      const result = JSON.parse(response.content);
+      const parsed = JSON.parse(this.extractJson(response));
       return {
-        recordTypes: result.recordTypes ?? [],
-        suggestedCustodians: result.suggestedCustodians ?? [],
-        keywords: result.keywords ?? [],
-        dateRange: result.dateRange?.start || result.dateRange?.end
+        recordTypes: Array.isArray(parsed.recordTypes)
+          ? parsed.recordTypes.map(String)
+          : undefined,
+        suggestedCustodians: Array.isArray(parsed.suggestedCustodians)
+          ? parsed.suggestedCustodians.map(String)
+          : undefined,
+        keywords: Array.isArray(parsed.keywords)
+          ? parsed.keywords.map(String)
+          : undefined,
+        dateRange: parsed.dateRange && typeof parsed.dateRange === 'object'
           ? {
-              start: result.dateRange?.start ?? undefined,
-              end: result.dateRange?.end ?? undefined,
+              start: parsed.dateRange.start ? String(parsed.dateRange.start) : undefined,
+              end: parsed.dateRange.end ? String(parsed.dateRange.end) : undefined,
             }
           : undefined,
-        confidence: result.confidence ?? 0.5,
+        confidence: Number(parsed.confidence) || undefined,
       };
     } catch {
-      return {
-        recordTypes: [],
-        suggestedCustodians: [],
-        keywords: [],
-        confidence: 0.3,
-      };
+      return { confidence: 0 };
     }
   }
 
@@ -309,41 +248,64 @@ Respond in JSON format:
       throw new Error('APRA request not found');
     }
 
-    const exemptions = await this.getExemptions(ctx, requestId);
-    const fulfillments = await this.getFulfillments(ctx, requestId);
-    const clarifications = await this.getClarifications(ctx, requestId);
+    const [clarifications, exemptions, fulfillments] = await Promise.all([
+      this.getClarifications(ctx, requestId),
+      this.getExemptions(ctx, requestId),
+      this.getFulfillments(ctx, requestId),
+    ]);
 
-    const statusContext = this.buildStatusContext(request, exemptions, fulfillments, clarifications);
+    const contextParts = [
+      `Request ID: ${request.id}`,
+      `Requester: ${request.requesterName}`,
+      `Status: ${request.status}`,
+      `Description: "${request.description}"`,
+      `Received: ${request.receivedAt}`,
+      `Statutory Deadline: ${request.statutoryDeadlineAt || 'Not set'}`,
+    ];
 
-    const prompt = `Draft a professional response letter for this APRA request.
+    if (exemptions.length > 0) {
+      contextParts.push(`\nExemptions cited:\n${exemptions.map(e =>
+        `- ${e.citation}: ${e.description}`
+      ).join('\n')}`);
+    }
 
-Request details:
-- Requester: ${request.requesterName}
-- Description: "${request.description}"
-- Current status: ${request.status}
-- Received: ${request.receivedAt}
-- Deadline: ${request.statutoryDeadlineAt ?? 'not set'}
+    if (fulfillments.length > 0) {
+      contextParts.push(`\nFulfillments:\n${fulfillments.map(f =>
+        `- ${f.deliveryMethod} on ${f.fulfilledAt}${f.notes ? `: ${f.notes}` : ''}`
+      ).join('\n')}`);
+    }
 
-${statusContext}
+    if (clarifications.length > 0) {
+      contextParts.push(`\nClarifications:\n${clarifications.map(c =>
+        `- Asked: ${c.messageToRequester}\n  Response: ${c.requesterResponse || 'Pending'}`
+      ).join('\n')}`);
+    }
 
-Draft a formal but friendly response letter appropriate for the current status. Include:
-- Acknowledgment of the request
-- Status update
-- Any exemptions being cited (with IC citations)
-- Next steps or delivery information
-- Contact information placeholder
+    const prompt = `You are drafting a professional response letter for a public records request under Indiana's Access to Public Records Act (IC 5-14-3).
 
-The letter should be professional and compliant with IC 5-14-3.`;
+${contextParts.join('\n')}
 
-    const response = await this.aiCore.chat(ctx, {
-      messages: [
-        { role: 'system', content: APRA_SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
+Draft an appropriate response letter based on the current status:
+- If FULFILLED: Thank requester, summarize what was provided
+- If DENIED: Cite specific exemptions, explain appeal rights
+- If PARTIALLY_FULFILLED: Explain what was provided and what was withheld (with exemptions)
+- If NEEDS_CLARIFICATION: Ask clarifying questions
+- If IN_REVIEW: Acknowledge receipt, provide timeline
+
+The letter should:
+- Be professional and courteous
+- Cite relevant statute sections where appropriate
+- Include appeal rights if any records are withheld
+- Reference the 7-day response requirement under IC 5-14-3-9
+
+Do not include placeholders like [YOUR NAME] - just end the letter appropriately.`;
+
+    const letter = await this.aiCore.complete(ctx, prompt, {
       temperature: 0.5,
+      maxTokens: 2000,
     });
 
-    return response.content;
+    return letter.trim();
   }
 
   async reviewParticularity(
@@ -357,52 +319,28 @@ The letter should be professional and compliant with IC 5-14-3.`;
       throw new Error('APRA request not found');
     }
 
-    // Update the request with the human review determination
-    // This uses the base service to update status if clarification is needed
-    if (!isParticular && request.status === 'RECEIVED') {
-      // If not particular and still in RECEIVED status, suggest adding clarification
-      // The actual clarification should be added separately via addClarification
-    }
+    // Update the request's particularity fields
+    // Note: This modifies the in-memory object. A real implementation
+    // would persist this to the database.
+    request.reasonablyParticular = isParticular;
+    request.particularityReason = reason;
+    request.updatedAt = new Date().toISOString();
 
-    // Update request fields - for now return the request as-is since
-    // the base service doesn't have a direct update method for these fields.
-    // In a real implementation, we'd update reasonablyParticular and particularityReason.
     return request;
   }
 
-  // ---------- Helper methods ----------
+  // ---------- Helpers ----------
 
-  private buildStatusContext(
-    request: ApraRequest,
-    exemptions: ApraExemptionCitation[],
-    fulfillments: ApraFulfillment[],
-    clarifications: { sentAt: string; respondedAt?: string; messageToRequester: string }[]
-  ): string {
-    const parts: string[] = [];
-
-    if (exemptions.length > 0) {
-      parts.push(
-        'Exemptions cited:\n' +
-        exemptions.map(e => `- ${e.citation}: ${e.description}`).join('\n')
-      );
+  /**
+   * Extract JSON from a response that might have markdown code blocks.
+   */
+  private extractJson(text: string): string {
+    // Try to extract JSON from markdown code blocks
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      return jsonMatch[1].trim();
     }
-
-    if (fulfillments.length > 0) {
-      parts.push(
-        'Fulfillments:\n' +
-        fulfillments.map(f =>
-          `- ${f.deliveryMethod} on ${f.fulfilledAt}${f.totalFeesCents ? ` (fees: $${(f.totalFeesCents / 100).toFixed(2)})` : ''}`
-        ).join('\n')
-      );
-    }
-
-    if (clarifications.length > 0) {
-      const pendingClarification = clarifications.find(c => !c.respondedAt);
-      if (pendingClarification) {
-        parts.push(`Pending clarification sent on ${pendingClarification.sentAt}: "${pendingClarification.messageToRequester}"`);
-      }
-    }
-
-    return parts.length > 0 ? parts.join('\n\n') : 'No additional context.';
+    // Otherwise assume the whole thing is JSON
+    return text.trim();
   }
 }

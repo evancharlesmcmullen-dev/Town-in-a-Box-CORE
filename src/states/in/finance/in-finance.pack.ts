@@ -107,7 +107,7 @@ export const InFinancePack: StateDomainPack<Partial<INFinanceConfig>> = {
  * import { buildFinanceConfig } from './in-finance.pack';
  *
  * const config = buildFinanceConfig(
- *   { tenantId: 'lapel-in', displayName: 'Town of Lapel', state: 'IN', entityClass: 'TOWN', population: 2350 },
+ *   { tenantId: 'example-town', displayName: 'Example Town', state: 'IN', entityClass: 'TOWN', population: 2350 },
  *   { fireModel: 'TERRITORY', hasUtilityFunds: true }
  * );
  *

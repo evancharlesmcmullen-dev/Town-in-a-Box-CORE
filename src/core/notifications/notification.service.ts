@@ -1,55 +1,54 @@
 // src/core/notifications/notification.service.ts
 //
-// Notification service interface.
+// Core notification service interface.
+// Implementations may use email providers, SMS gateways, push services, etc.
 
 import { TenantContext } from '../tenancy/tenancy.types';
 import {
   Notification,
   CreateNotificationInput,
-  NotificationDeliveryStatus,
-  NotificationPreferences,
-  NotificationCategory,
+  NotificationFilter,
 } from './notification.types';
 
 /**
- * Filter options for listing notifications.
- */
-export interface NotificationFilter {
-  /** Filter by category */
-  category?: NotificationCategory;
-  /** Filter by reference ID */
-  referenceId?: string;
-  /** Filter by sent status */
-  sentOnly?: boolean;
-  /** Filter by pending status */
-  pendingOnly?: boolean;
-  /** From date (created) */
-  fromDate?: Date;
-  /** To date (created) */
-  toDate?: Date;
-}
-
-/**
- * Service interface for managing notifications.
+ * Core notification service interface.
  *
- * Implementations handle:
- * - Creating and scheduling notifications
- * - Delivery via various channels (email, SMS, etc.)
- * - Tracking delivery status
- * - Managing user preferences
+ * Used by all engines to send notifications to users (staff or public).
+ * Implementations handle the actual delivery via email, SMS, push, etc.
+ *
+ * @example
+ * await notificationService.send(ctx, {
+ *   type: 'apra_deadline',
+ *   subject: 'APRA Request Deadline Approaching',
+ *   body: 'Request #123 is due in 2 days.',
+ *   priority: 'high',
+ *   channels: ['email'],
+ *   recipientEmail: 'clerk@town.gov',
+ * });
  */
 export interface NotificationService {
   /**
-   * Create a new notification.
+   * Send a notification.
    *
-   * If scheduledAt is provided, the notification will be queued for later.
-   * Otherwise, it will be sent immediately.
+   * Creates and immediately queues the notification for delivery.
    *
    * @param ctx - Tenant context
    * @param input - Notification details
    * @returns The created notification
    */
-  createNotification(
+  send(
+    ctx: TenantContext,
+    input: CreateNotificationInput
+  ): Promise<Notification>;
+
+  /**
+   * Schedule a notification for later delivery.
+   *
+   * @param ctx - Tenant context
+   * @param input - Notification details (scheduledAt should be set)
+   * @returns The created notification with pending status
+   */
+  schedule(
     ctx: TenantContext,
     input: CreateNotificationInput
   ): Promise<Notification>;
@@ -61,95 +60,41 @@ export interface NotificationService {
    * @param id - Notification ID
    * @returns The notification or null if not found
    */
-  getNotification(
-    ctx: TenantContext,
-    id: string
-  ): Promise<Notification | null>;
+  get(ctx: TenantContext, id: string): Promise<Notification | null>;
 
   /**
    * List notifications with optional filtering.
    *
    * @param ctx - Tenant context
-   * @param filter - Filter options
+   * @param filter - Optional filters
    * @returns List of notifications
    */
-  listNotifications(
-    ctx: TenantContext,
-    filter?: NotificationFilter
-  ): Promise<Notification[]>;
+  list(ctx: TenantContext, filter?: NotificationFilter): Promise<Notification[]>;
 
   /**
-   * Cancel a pending notification.
-   *
-   * Only works for notifications that haven't been sent yet.
+   * Mark a notification as read.
    *
    * @param ctx - Tenant context
    * @param id - Notification ID
-   * @returns True if cancelled, false if already sent
+   * @returns The updated notification
    */
-  cancelNotification(
-    ctx: TenantContext,
-    id: string
-  ): Promise<boolean>;
+  markAsRead(ctx: TenantContext, id: string): Promise<Notification>;
 
   /**
-   * Send a notification immediately.
-   *
-   * Bypasses scheduling and sends right away.
+   * Cancel a pending/scheduled notification.
    *
    * @param ctx - Tenant context
    * @param id - Notification ID
-   * @returns Delivery statuses for each channel
+   * @returns The cancelled notification
    */
-  sendNow(
-    ctx: TenantContext,
-    id: string
-  ): Promise<NotificationDeliveryStatus[]>;
+  cancel(ctx: TenantContext, id: string): Promise<Notification>;
 
   /**
-   * Get delivery status for a notification.
-   *
-   * @param ctx - Tenant context
-   * @param notificationId - Notification ID
-   * @returns Delivery statuses for each channel
-   */
-  getDeliveryStatus(
-    ctx: TenantContext,
-    notificationId: string
-  ): Promise<NotificationDeliveryStatus[]>;
-
-  /**
-   * Get user notification preferences.
+   * Get count of unread notifications for a user.
    *
    * @param ctx - Tenant context
    * @param userId - User ID
-   * @returns User preferences or default preferences if not set
+   * @returns Count of unread notifications
    */
-  getPreferences(
-    ctx: TenantContext,
-    userId: string
-  ): Promise<NotificationPreferences>;
-
-  /**
-   * Update user notification preferences.
-   *
-   * @param ctx - Tenant context
-   * @param preferences - Updated preferences
-   * @returns The saved preferences
-   */
-  updatePreferences(
-    ctx: TenantContext,
-    preferences: Partial<NotificationPreferences> & { userId: string }
-  ): Promise<NotificationPreferences>;
-
-  /**
-   * Process scheduled notifications that are due.
-   *
-   * This should be called periodically (e.g., every minute) to send
-   * scheduled notifications whose scheduledAt time has passed.
-   *
-   * @param ctx - Tenant context
-   * @returns Number of notifications sent
-   */
-  processScheduledNotifications(ctx: TenantContext): Promise<number>;
+  getUnreadCount(ctx: TenantContext, userId: string): Promise<number>;
 }

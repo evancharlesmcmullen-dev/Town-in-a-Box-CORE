@@ -1,408 +1,307 @@
 // src/engines/records/apra-fee.calculator.ts
 //
-// APRA fee calculator for computing copy fees per IC 5-14-3-8.
-//
-// Per Indiana law, agencies may charge:
-// - Reasonable copying fees
-// - Labor costs for extensive requests (some agencies only)
-// - Media/mailing costs
+// Fee calculator for Indiana APRA (Access to Public Records Act) requests.
+// Implements fee limits per IC 5-14-3-8 and 25 IAC 1-1-1.
 
 import { TenantContext } from '../../core/tenancy/tenancy.types';
-import {
-  FeeService,
-} from '../fees/fee.service';
-import {
-  FeeCalculationResult,
-  FeeCalculationLine,
-} from '../fees/fee.types';
 
-// =============================================================================
-// APRA Fee Types
-// =============================================================================
+// ===========================================================================
+// FEE INPUT / OUTPUT TYPES
+// ===========================================================================
 
 /**
- * Standard APRA fee item codes.
- * These should be created in the FeeService with appropriate rates.
- */
-export const APRA_FEE_CODES = {
-  /** Per-page copying (black & white, standard paper) */
-  COPY_BW_PAGE: 'APRA_COPY_BW_PAGE',
-  /** Per-page copying (color) */
-  COPY_COLOR_PAGE: 'APRA_COPY_COLOR_PAGE',
-  /** Large format copying (11x17, blueprints, etc.) */
-  COPY_LARGE_FORMAT: 'APRA_COPY_LARGE_FORMAT',
-  /** CD/DVD media */
-  MEDIA_CD_DVD: 'APRA_MEDIA_CD_DVD',
-  /** USB drive media */
-  MEDIA_USB: 'APRA_MEDIA_USB',
-  /** Mailing/postage fee */
-  MAILING: 'APRA_MAILING',
-  /** Per-hour labor for extensive research (if applicable) */
-  LABOR_HOUR: 'APRA_LABOR_HOUR',
-  /** Certification fee for certified copies */
-  CERTIFICATION: 'APRA_CERTIFICATION',
-} as const;
-
-/**
- * Input for calculating APRA copy fees.
+ * Input for calculating APRA copying fees.
  */
 export interface ApraFeeInput {
+  /** Request ID for tracking */
+  requestId?: string;
+  /** Requester name for records */
+  requesterName?: string;
+
+  // Page counts by type
   /** Number of black & white pages */
   bwPages?: number;
   /** Number of color pages */
   colorPages?: number;
-  /** Number of large format pages */
+  /** Number of large format pages (11x17 or larger) */
   largeFormatPages?: number;
-  /** Number of CDs/DVDs */
+
+  // Media
+  /** Number of CD/DVD media */
   cdDvdMedia?: number;
   /** Number of USB drives */
   usbMedia?: number;
+
+  // Additional costs
   /** Whether mailing is required */
   requiresMailing?: boolean;
-  /** Hours of labor for extensive requests (if agency charges) */
+  /** Actual mailing costs in cents (if known) */
+  mailingCostCents?: number;
+  /** Labor hours for extensive requests (over 2 hours, per IC 5-14-3-8(c)) */
   laborHours?: number;
   /** Number of certified copies */
   certifications?: number;
-  /** APRA request ID for context */
+}
+
+/**
+ * A single fee line item.
+ */
+export interface ApraFeeLine {
+  /** Fee code for tracking */
+  code: string;
+  /** Human-readable name */
+  name: string;
+  /** Quantity */
+  quantity: number;
+  /** Amount per unit in cents */
+  unitAmountCents: number;
+  /** Line total in cents */
+  lineTotalCents: number;
+}
+
+/**
+ * Result of fee calculation.
+ */
+export interface ApraFeeResult {
+  /** Total amount in cents */
+  totalCents: number;
+  /** Formatted total (e.g., "$15.50") */
+  formattedTotal: string;
+  /** Total page count */
+  totalPages: number;
+  /** Whether this qualifies as an "extensive" request under IC 5-14-3-8(c) */
+  isExtensive: boolean;
+  /** Line-item breakdown */
+  lines: ApraFeeLine[];
+  /** Calculated at timestamp */
+  calculatedAt: string;
+  /** Context from input */
   requestId?: string;
-  /** Requester name for context */
   requesterName?: string;
 }
 
-/**
- * Result of APRA fee calculation with APRA-specific details.
- */
-export interface ApraFeeResult {
-  /** Full fee calculation result from FeeService */
-  calculation: FeeCalculationResult;
-  /** Summary for display */
-  summary: {
-    /** Total pages copied */
-    totalPages: number;
-    /** Total amount in cents */
-    totalCents: number;
-    /** Formatted total (e.g., "$12.50") */
-    formattedTotal: string;
-  };
-  /** Whether the request qualifies as "extensive" requiring labor fees */
-  isExtensive: boolean;
+// ===========================================================================
+// FEE SCHEDULE DEFAULTS (per Indiana Admin Code)
+// These are maximum allowed amounts per 25 IAC 1-1-1
+// ===========================================================================
+
+export interface ApraFeeSchedule {
+  /** Black & white per page in cents */
+  bwPageCents: number;
+  /** Color per page in cents */
+  colorPageCents: number;
+  /** Large format per page in cents */
+  largeFormatPageCents: number;
+  /** CD/DVD per disc in cents */
+  cdDvdCents: number;
+  /** USB drive per unit in cents */
+  usbCents: number;
+  /** Labor per hour in cents (for requests over 2 hours) */
+  laborHourlyCents: number;
+  /** Certification per copy in cents */
+  certificationCents: number;
+  /** Default mailing cost in cents if not specified */
+  defaultMailingCents: number;
+  /** Threshold hours for "extensive" request */
+  extensiveThresholdHours: number;
 }
 
 /**
- * Default APRA fee rates in cents.
- * Used when FeeService doesn't have specific rates configured.
+ * Default fee schedule based on Indiana Administrative Code.
+ * Agencies may set lower amounts but not higher.
  */
-export const DEFAULT_APRA_RATES = {
-  /** $0.10 per page black & white (industry standard) */
-  [APRA_FEE_CODES.COPY_BW_PAGE]: 10,
-  /** $0.25 per page color */
-  [APRA_FEE_CODES.COPY_COLOR_PAGE]: 25,
-  /** $0.50 per large format page */
-  [APRA_FEE_CODES.COPY_LARGE_FORMAT]: 50,
-  /** $1.00 per CD/DVD */
-  [APRA_FEE_CODES.MEDIA_CD_DVD]: 100,
-  /** $5.00 per USB drive */
-  [APRA_FEE_CODES.MEDIA_USB]: 500,
-  /** $5.00 flat mailing fee */
-  [APRA_FEE_CODES.MAILING]: 500,
-  /** $15.00 per hour labor (if charged) */
-  [APRA_FEE_CODES.LABOR_HOUR]: 1500,
-  /** $1.00 per certification */
-  [APRA_FEE_CODES.CERTIFICATION]: 100,
+export const DEFAULT_INDIANA_FEE_SCHEDULE: ApraFeeSchedule = {
+  bwPageCents: 10, // $0.10 per page
+  colorPageCents: 25, // $0.25 per page
+  largeFormatPageCents: 50, // $0.50 per page
+  cdDvdCents: 100, // $1.00 per disc
+  usbCents: 500, // $5.00 per USB (actual cost)
+  laborHourlyCents: 2000, // $20.00 per hour (lowest-paid employee rate)
+  certificationCents: 200, // $2.00 per certification
+  defaultMailingCents: 500, // $5.00 default for mailing
+  extensiveThresholdHours: 2, // First 2 hours are free
 };
 
-// =============================================================================
-// APRA Fee Calculator
-// =============================================================================
+// ===========================================================================
+// APRA FEE CALCULATOR
+// ===========================================================================
 
 /**
- * Calculates APRA copying fees using the FeeService.
+ * Calculator for APRA copying fees.
  *
- * Per IC 5-14-3-8, Indiana public agencies may charge reasonable fees for
- * copying public records. This calculator:
- * - Uses FeeService rates if configured
- * - Falls back to reasonable default rates
- * - Tracks all line items for transparency
+ * Implements fee limits per IC 5-14-3-8:
+ * - (a) Agencies may charge for copying records
+ * - (b) Fees cannot exceed actual cost or be used to discourage requests
+ * - (c) For extensive requests, labor may be charged after first 2 hours
  *
  * @example
- * const calculator = new ApraFeeCalculator(feeService);
- * const result = await calculator.calculateFees(ctx, {
+ * const calculator = new ApraFeeCalculator();
+ * const result = calculator.calculateFees(ctx, {
  *   bwPages: 50,
  *   colorPages: 5,
  *   requiresMailing: true,
  * });
- * console.log(result.summary.formattedTotal); // "$8.75"
+ * console.log(result.formattedTotal); // "$8.50"
  */
 export class ApraFeeCalculator {
-  constructor(private readonly feeService?: FeeService) {}
+  private schedule: ApraFeeSchedule;
 
-  /**
-   * Calculate APRA copy fees for a request.
-   *
-   * @param ctx - Tenant context
-   * @param input - Fee calculation inputs
-   * @returns Fee calculation result with APRA-specific summary
-   */
-  async calculateFees(
-    ctx: TenantContext,
-    input: ApraFeeInput
-  ): Promise<ApraFeeResult> {
-    const lines: FeeCalculationLine[] = [];
-    const now = new Date();
-
-    // Try to get rates from FeeService, fall back to defaults
-    const rates = await this.getRates(ctx);
-
-    // Calculate each fee type
-    if (input.bwPages && input.bwPages > 0) {
-      lines.push(this.createLine(
-        APRA_FEE_CODES.COPY_BW_PAGE,
-        'Black & White Copies',
-        input.bwPages,
-        rates[APRA_FEE_CODES.COPY_BW_PAGE]
-      ));
-    }
-
-    if (input.colorPages && input.colorPages > 0) {
-      lines.push(this.createLine(
-        APRA_FEE_CODES.COPY_COLOR_PAGE,
-        'Color Copies',
-        input.colorPages,
-        rates[APRA_FEE_CODES.COPY_COLOR_PAGE]
-      ));
-    }
-
-    if (input.largeFormatPages && input.largeFormatPages > 0) {
-      lines.push(this.createLine(
-        APRA_FEE_CODES.COPY_LARGE_FORMAT,
-        'Large Format Copies',
-        input.largeFormatPages,
-        rates[APRA_FEE_CODES.COPY_LARGE_FORMAT]
-      ));
-    }
-
-    if (input.cdDvdMedia && input.cdDvdMedia > 0) {
-      lines.push(this.createLine(
-        APRA_FEE_CODES.MEDIA_CD_DVD,
-        'CD/DVD Media',
-        input.cdDvdMedia,
-        rates[APRA_FEE_CODES.MEDIA_CD_DVD]
-      ));
-    }
-
-    if (input.usbMedia && input.usbMedia > 0) {
-      lines.push(this.createLine(
-        APRA_FEE_CODES.MEDIA_USB,
-        'USB Drive',
-        input.usbMedia,
-        rates[APRA_FEE_CODES.MEDIA_USB]
-      ));
-    }
-
-    if (input.requiresMailing) {
-      lines.push(this.createLine(
-        APRA_FEE_CODES.MAILING,
-        'Mailing/Postage',
-        1,
-        rates[APRA_FEE_CODES.MAILING]
-      ));
-    }
-
-    if (input.laborHours && input.laborHours > 0) {
-      lines.push(this.createLine(
-        APRA_FEE_CODES.LABOR_HOUR,
-        'Research/Retrieval Labor',
-        input.laborHours,
-        rates[APRA_FEE_CODES.LABOR_HOUR]
-      ));
-    }
-
-    if (input.certifications && input.certifications > 0) {
-      lines.push(this.createLine(
-        APRA_FEE_CODES.CERTIFICATION,
-        'Certification Fee',
-        input.certifications,
-        rates[APRA_FEE_CODES.CERTIFICATION]
-      ));
-    }
-
-    // Calculate totals
-    const subtotalCents = lines.reduce((sum, line) => sum + line.lineTotalCents, 0);
-    const totalCents = subtotalCents; // No discounts for APRA fees
-
-    // Build result
-    const calculation: FeeCalculationResult = {
-      tenantId: ctx.tenantId,
-      scheduleId: null,
-      lines,
-      subtotalCents,
-      totalCents,
-      currency: 'USD',
-      calculatedAt: now.toISOString(),
-      context: {
-        applicantName: input.requesterName,
-        caseNumber: input.requestId,
-      },
-    };
-
-    const totalPages = (input.bwPages ?? 0) +
-                       (input.colorPages ?? 0) +
-                       (input.largeFormatPages ?? 0);
-
-    // "Extensive" requests typically involve more than 100 pages or labor
-    const isExtensive = totalPages > 100 || (input.laborHours ?? 0) > 0;
-
-    return {
-      calculation,
-      summary: {
-        totalPages,
-        totalCents,
-        formattedTotal: this.formatCents(totalCents),
-      },
-      isExtensive,
-    };
+  constructor(schedule: ApraFeeSchedule = DEFAULT_INDIANA_FEE_SCHEDULE) {
+    this.schedule = schedule;
   }
 
   /**
-   * Get configured fee rates, falling back to defaults.
+   * Calculate fees for an APRA request.
+   *
+   * @param ctx - Tenant context (for future tenant-specific fee schedules)
+   * @param input - Fee calculation input
+   * @returns Detailed fee breakdown
    */
-  private async getRates(ctx: TenantContext): Promise<Record<string, number>> {
-    const rates: Record<string, number> = { ...DEFAULT_APRA_RATES };
+  calculateFees(ctx: TenantContext, input: ApraFeeInput): ApraFeeResult {
+    const lines: ApraFeeLine[] = [];
+    let totalPages = 0;
 
-    // Create a set of valid APRA fee codes for fast lookup
-    const validCodes = new Set<string>(Object.values(APRA_FEE_CODES));
+    // Black & white pages
+    if (input.bwPages && input.bwPages > 0) {
+      const qty = input.bwPages;
+      totalPages += qty;
+      lines.push({
+        code: 'BW_COPY',
+        name: 'Black & White Copies',
+        quantity: qty,
+        unitAmountCents: this.schedule.bwPageCents,
+        lineTotalCents: qty * this.schedule.bwPageCents,
+      });
+    }
 
-    if (this.feeService) {
-      try {
-        const feeItems = await this.feeService.listFeeItems(ctx);
-        for (const item of feeItems) {
-          if (validCodes.has(item.code) && item.isActive) {
-            rates[item.code] = item.baseAmountCents;
-          }
-        }
-      } catch {
-        // Use defaults if FeeService fails
+    // Color pages
+    if (input.colorPages && input.colorPages > 0) {
+      const qty = input.colorPages;
+      totalPages += qty;
+      lines.push({
+        code: 'COLOR_COPY',
+        name: 'Color Copies',
+        quantity: qty,
+        unitAmountCents: this.schedule.colorPageCents,
+        lineTotalCents: qty * this.schedule.colorPageCents,
+      });
+    }
+
+    // Large format pages
+    if (input.largeFormatPages && input.largeFormatPages > 0) {
+      const qty = input.largeFormatPages;
+      totalPages += qty;
+      lines.push({
+        code: 'LARGE_FORMAT',
+        name: 'Large Format Copies (11x17+)',
+        quantity: qty,
+        unitAmountCents: this.schedule.largeFormatPageCents,
+        lineTotalCents: qty * this.schedule.largeFormatPageCents,
+      });
+    }
+
+    // CD/DVD media
+    if (input.cdDvdMedia && input.cdDvdMedia > 0) {
+      const qty = input.cdDvdMedia;
+      lines.push({
+        code: 'CD_DVD',
+        name: 'CD/DVD Media',
+        quantity: qty,
+        unitAmountCents: this.schedule.cdDvdCents,
+        lineTotalCents: qty * this.schedule.cdDvdCents,
+      });
+    }
+
+    // USB media
+    if (input.usbMedia && input.usbMedia > 0) {
+      const qty = input.usbMedia;
+      lines.push({
+        code: 'USB',
+        name: 'USB Drive',
+        quantity: qty,
+        unitAmountCents: this.schedule.usbCents,
+        lineTotalCents: qty * this.schedule.usbCents,
+      });
+    }
+
+    // Certifications
+    if (input.certifications && input.certifications > 0) {
+      const qty = input.certifications;
+      lines.push({
+        code: 'CERTIFICATION',
+        name: 'Certified Copy',
+        quantity: qty,
+        unitAmountCents: this.schedule.certificationCents,
+        lineTotalCents: qty * this.schedule.certificationCents,
+      });
+    }
+
+    // Mailing
+    if (input.requiresMailing) {
+      const mailingCost = input.mailingCostCents ?? this.schedule.defaultMailingCents;
+      lines.push({
+        code: 'MAILING',
+        name: 'Mailing/Postage',
+        quantity: 1,
+        unitAmountCents: mailingCost,
+        lineTotalCents: mailingCost,
+      });
+    }
+
+    // Labor (only for extensive requests over 2 hours)
+    const isExtensive = (input.laborHours ?? 0) > this.schedule.extensiveThresholdHours;
+    if (isExtensive && input.laborHours) {
+      // Only charge for hours over the threshold
+      const chargeableHours = input.laborHours - this.schedule.extensiveThresholdHours;
+      if (chargeableHours > 0) {
+        lines.push({
+          code: 'LABOR',
+          name: `Staff Time (over ${this.schedule.extensiveThresholdHours} hrs)`,
+          quantity: chargeableHours,
+          unitAmountCents: this.schedule.laborHourlyCents,
+          lineTotalCents: Math.round(chargeableHours * this.schedule.laborHourlyCents),
+        });
       }
     }
 
-    return rates;
-  }
+    // Calculate total
+    const totalCents = lines.reduce((sum, line) => sum + line.lineTotalCents, 0);
 
-  /**
-   * Create a fee calculation line item.
-   */
-  private createLine(
-    code: string,
-    name: string,
-    quantity: number,
-    unitAmountCents: number
-  ): FeeCalculationLine {
     return {
-      feeItemId: code,
-      feeItemCode: code,
-      feeItemName: name,
-      quantity,
-      unitAmountCents,
-      lineTotalCents: quantity * unitAmountCents,
+      totalCents,
+      formattedTotal: this.formatCurrency(totalCents),
+      totalPages,
+      isExtensive,
+      lines,
+      calculatedAt: new Date().toISOString(),
+      requestId: input.requestId,
+      requesterName: input.requesterName,
     };
   }
 
   /**
-   * Format cents as a currency string.
+   * Get the current fee schedule.
    */
-  private formatCents(cents: number): string {
-    const dollars = cents / 100;
-    return `$${dollars.toFixed(2)}`;
+  getSchedule(): ApraFeeSchedule {
+    return { ...this.schedule };
   }
-}
 
-/**
- * Create default APRA fee items for a tenant.
- *
- * Call this to seed the FeeService with standard APRA fee items
- * that can then be customized by the tenant.
- */
-export function getDefaultApraFeeItems(tenantId: string) {
-  return [
-    {
-      id: `${tenantId}-apra-bw`,
-      tenantId,
-      code: APRA_FEE_CODES.COPY_BW_PAGE,
-      name: 'APRA - Black & White Copy (per page)',
-      description: 'Per IC 5-14-3-8, reasonable copying fee for standard B&W copies',
-      category: 'other' as const,
-      baseAmountCents: DEFAULT_APRA_RATES[APRA_FEE_CODES.COPY_BW_PAGE],
-      isActive: true,
-    },
-    {
-      id: `${tenantId}-apra-color`,
-      tenantId,
-      code: APRA_FEE_CODES.COPY_COLOR_PAGE,
-      name: 'APRA - Color Copy (per page)',
-      description: 'Per IC 5-14-3-8, reasonable copying fee for color copies',
-      category: 'other' as const,
-      baseAmountCents: DEFAULT_APRA_RATES[APRA_FEE_CODES.COPY_COLOR_PAGE],
-      isActive: true,
-    },
-    {
-      id: `${tenantId}-apra-large`,
-      tenantId,
-      code: APRA_FEE_CODES.COPY_LARGE_FORMAT,
-      name: 'APRA - Large Format Copy (per page)',
-      description: 'Per IC 5-14-3-8, fee for 11x17 or larger copies',
-      category: 'other' as const,
-      baseAmountCents: DEFAULT_APRA_RATES[APRA_FEE_CODES.COPY_LARGE_FORMAT],
-      isActive: true,
-    },
-    {
-      id: `${tenantId}-apra-cd`,
-      tenantId,
-      code: APRA_FEE_CODES.MEDIA_CD_DVD,
-      name: 'APRA - CD/DVD Media',
-      description: 'Per IC 5-14-3-8, fee for CD or DVD media',
-      category: 'other' as const,
-      baseAmountCents: DEFAULT_APRA_RATES[APRA_FEE_CODES.MEDIA_CD_DVD],
-      isActive: true,
-    },
-    {
-      id: `${tenantId}-apra-usb`,
-      tenantId,
-      code: APRA_FEE_CODES.MEDIA_USB,
-      name: 'APRA - USB Drive',
-      description: 'Per IC 5-14-3-8, fee for USB flash drive',
-      category: 'other' as const,
-      baseAmountCents: DEFAULT_APRA_RATES[APRA_FEE_CODES.MEDIA_USB],
-      isActive: true,
-    },
-    {
-      id: `${tenantId}-apra-mail`,
-      tenantId,
-      code: APRA_FEE_CODES.MAILING,
-      name: 'APRA - Mailing/Postage',
-      description: 'Per IC 5-14-3-8, reasonable mailing costs',
-      category: 'other' as const,
-      baseAmountCents: DEFAULT_APRA_RATES[APRA_FEE_CODES.MAILING],
-      isActive: true,
-    },
-    {
-      id: `${tenantId}-apra-labor`,
-      tenantId,
-      code: APRA_FEE_CODES.LABOR_HOUR,
-      name: 'APRA - Labor (per hour)',
-      description: 'Per IC 5-14-3-8, labor costs for extensive requests (if applicable)',
-      category: 'other' as const,
-      baseAmountCents: DEFAULT_APRA_RATES[APRA_FEE_CODES.LABOR_HOUR],
-      isActive: false, // Disabled by default - agency must opt-in
-    },
-    {
-      id: `${tenantId}-apra-cert`,
-      tenantId,
-      code: APRA_FEE_CODES.CERTIFICATION,
-      name: 'APRA - Certification Fee',
-      description: 'Fee for certified copies of public records',
-      category: 'other' as const,
-      baseAmountCents: DEFAULT_APRA_RATES[APRA_FEE_CODES.CERTIFICATION],
-      isActive: true,
-    },
-  ];
+  /**
+   * Update the fee schedule.
+   * Agencies may set lower fees but not higher than state maximums.
+   */
+  setSchedule(schedule: Partial<ApraFeeSchedule>): void {
+    this.schedule = { ...this.schedule, ...schedule };
+  }
+
+  /**
+   * Format cents as currency string.
+   */
+  private formatCurrency(cents: number): string {
+    const dollars = cents / 100;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(dollars);
+  }
 }

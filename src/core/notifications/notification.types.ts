@@ -1,128 +1,108 @@
 // src/core/notifications/notification.types.ts
 //
 // Core types for the notification system.
-// Generic enough to support APRA deadlines, meeting reminders, and other alerts.
+// Used by all engines (APRA, meetings, planning, etc.) for alerts and reminders.
 
 /**
- * Notification delivery channels.
+ * Priority level for notifications.
  */
-export type NotificationChannel = 'EMAIL' | 'SMS' | 'IN_APP' | 'WEBHOOK';
+export type NotificationPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 /**
- * Priority levels for notifications.
+ * Channel through which a notification can be delivered.
  */
-export type NotificationPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+export type NotificationChannel = 'email' | 'sms' | 'push' | 'in_app' | 'webhook';
 
 /**
- * Categories of notifications.
+ * Status of a notification.
  */
-export type NotificationCategory =
-  | 'APRA_DEADLINE'      // APRA statutory deadline approaching
-  | 'APRA_STATUS'        // APRA request status change
-  | 'MEETING_NOTICE'     // Meeting notice deadline
-  | 'MEETING_REMINDER'   // Meeting starting soon
-  | 'ASSISTANCE_CASE'    // Township assistance case update
-  | 'COMPLIANCE_TASK'    // Compliance task due
-  | 'SYSTEM'             // System alerts
-  | 'OTHER';
+export type NotificationStatus = 'pending' | 'sent' | 'delivered' | 'failed' | 'read';
 
 /**
- * A notification to be sent or that has been sent.
+ * A notification entity.
  */
 export interface Notification {
+  /** Unique identifier */
   id: string;
+  /** Tenant this notification belongs to */
   tenantId: string;
 
-  /** Category of the notification */
-  category: NotificationCategory;
-  /** Priority level */
-  priority: NotificationPriority;
-
-  /** Short summary/subject */
-  title: string;
-  /** Full message body (may contain markdown) */
+  /** Notification type/category (e.g., "apra_deadline", "meeting_reminder") */
+  type: string;
+  /** Subject/title of the notification */
+  subject: string;
+  /** Body/message content */
   body: string;
 
-  /** Recipient user ID(s) */
-  recipientUserIds: string[];
-  /** Optional specific email addresses to send to */
-  recipientEmails?: string[];
-
-  /** Channels to use for delivery */
+  /** Priority level */
+  priority: NotificationPriority;
+  /** Delivery channels requested */
   channels: NotificationChannel[];
 
-  /** Reference to related entity (e.g., APRA request ID) */
-  referenceId?: string;
-  /** Type of referenced entity */
-  referenceType?: string;
+  /** Recipient user ID (if internal) */
+  recipientUserId?: string;
+  /** Recipient email (if external) */
+  recipientEmail?: string;
+  /** Recipient phone (for SMS) */
+  recipientPhone?: string;
+
+  /** Related entity ID (e.g., APRA request ID) */
+  relatedEntityId?: string;
+  /** Related entity type (e.g., "apra_request") */
+  relatedEntityType?: string;
+
+  /** Current status */
+  status: NotificationStatus;
 
   /** When the notification was created (ISO 8601) */
   createdAt: string;
-  /** When the notification was scheduled to send (ISO 8601) */
+  /** When the notification should be sent (for scheduled notifications) */
   scheduledAt?: string;
   /** When the notification was actually sent (ISO 8601) */
   sentAt?: string;
+  /** When the notification was delivered (ISO 8601) */
+  deliveredAt?: string;
+  /** When the notification was read (ISO 8601) */
+  readAt?: string;
 
   /** Additional metadata */
   metadata?: Record<string, unknown>;
 }
 
 /**
- * Input for creating a new notification.
+ * Input for creating a notification.
  */
 export interface CreateNotificationInput {
-  category: NotificationCategory;
-  priority?: NotificationPriority;
-  title: string;
+  type: string;
+  subject: string;
   body: string;
-  recipientUserIds: string[];
-  recipientEmails?: string[];
+  priority?: NotificationPriority;
   channels?: NotificationChannel[];
-  referenceId?: string;
-  referenceType?: string;
+  recipientUserId?: string;
+  recipientEmail?: string;
+  recipientPhone?: string;
+  relatedEntityId?: string;
+  relatedEntityType?: string;
   scheduledAt?: string;
   metadata?: Record<string, unknown>;
 }
 
 /**
- * Delivery status for a notification.
+ * Filter options for listing notifications.
  */
-export interface NotificationDeliveryStatus {
-  notificationId: string;
-  channel: NotificationChannel;
-  status: 'PENDING' | 'SENT' | 'DELIVERED' | 'FAILED' | 'BOUNCED';
-  attemptedAt?: string;
-  deliveredAt?: string;
-  failureReason?: string;
-}
-
-/**
- * User notification preferences.
- */
-export interface NotificationPreferences {
-  userId: string;
-  tenantId: string;
-
-  /** Which channels the user wants to receive notifications on */
-  enabledChannels: NotificationChannel[];
-
-  /** Per-category preferences */
-  categoryPreferences: {
-    category: NotificationCategory;
-    enabled: boolean;
-    channels?: NotificationChannel[];
-  }[];
-
-  /** Email address for notifications (may differ from account email) */
-  notificationEmail?: string;
-
-  /** Phone number for SMS */
-  smsPhoneNumber?: string;
-
-  /** Quiet hours (no notifications during these times) */
-  quietHours?: {
-    start: string; // HH:mm format
-    end: string;
-    timezone: string;
-  };
+export interface NotificationFilter {
+  /** Filter by type(s) */
+  types?: string[];
+  /** Filter by status(es) */
+  statuses?: NotificationStatus[];
+  /** Filter by recipient user ID */
+  recipientUserId?: string;
+  /** Filter by related entity ID */
+  relatedEntityId?: string;
+  /** Filter by priority */
+  priority?: NotificationPriority;
+  /** Only include unread notifications */
+  unreadOnly?: boolean;
+  /** Limit results */
+  limit?: number;
 }
