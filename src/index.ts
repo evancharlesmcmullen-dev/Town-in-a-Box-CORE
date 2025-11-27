@@ -162,10 +162,37 @@ export { InMemoryAssistanceReportingService } from './engines/township-assistanc
 // =============================================================================
 
 // Service interface
-export type { ApraService } from './engines/records/apra.service';
+export type {
+  ApraService,
+  CreateApraRequestInput,
+  ApraRequestFilter,
+  AddExemptionInput,
+  RecordFulfillmentInput,
+} from './engines/records/apra.service';
+
+// Types
+export type {
+  ApraRequestStatus,
+  ApraRequester,
+  ApraRequest,
+  ApraRequestScope,
+  ApraStatusHistoryEntry,
+  ApraClarification,
+  ApraExemptionCitation,
+  ApraFulfillment,
+  ApraRequestSummary,
+} from './engines/records/apra.types';
 
 // Implementation
 export { InMemoryApraService } from './engines/records/in-memory-apra.service';
+export type { InMemoryApraSeedData } from './engines/records/in-memory-apra.service';
+
+// APRA Calendar utilities (for deadline calculations)
+export {
+  computeApraDeadline,
+  addBusinessDays,
+} from './core/calendar/open-door.calendar';
+export type { ApraCalendarOptions } from './core/calendar/open-door.calendar';
 
 // =============================================================================
 // LEGAL ENGINE (Indiana)
