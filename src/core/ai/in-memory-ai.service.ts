@@ -3,7 +3,7 @@
 import { randomUUID } from 'crypto';
 import { TenantContext } from '../tenancy/tenancy.types';
 import { AiInteraction } from './ai.types';
-import { AiAssistantService, AiInsightsService } from './ai.service';
+import { AiAssistantService, AiInsightsService } from './ai.services';
 
 export interface InMemoryAiSeedData {
   interactions?: AiInteraction[];
