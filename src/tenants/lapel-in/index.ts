@@ -1,3 +1,17 @@
 // src/tenants/lapel-in/index.ts
 
-export { lapelTenantConfig, createLapelConfig } from './tenant.config';
+export {
+  lapelTenantConfig,
+  createLapelConfig,
+  lapelIdentity,
+  lapelFinanceOverrides,
+} from './tenant.config';
+
+export {
+  lapelFinanceConfig,
+  getLapelFinanceDefaults,
+  buildLapelFinanceConfig,
+  getLapelLitStatus,
+  compareLitEligibility,
+  fireModelExamples,
+} from './finance.wiring';

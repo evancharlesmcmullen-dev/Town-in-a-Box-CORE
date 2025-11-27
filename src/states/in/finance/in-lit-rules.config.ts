@@ -7,7 +7,52 @@ import { StatutoryCitation } from '../../../core/state';
  *
  * Defines the rules and requirements for Local Income Tax
  * under IC 6-3.6 and related statutes.
+ *
+ * KEY RULE: Municipalities under 3,501 population cannot levy their own LIT;
+ * they must participate in county LIT distributions.
  */
+
+// =============================================================================
+// PURE RULE FUNCTIONS (no dependencies on tenants - just logic)
+// =============================================================================
+
+/**
+ * Pure rules interface for LIT eligibility.
+ * These functions take raw values and return boolean/computed results.
+ */
+export interface InLitRuleSet {
+  /**
+   * Can this municipality levy its own Local Income Tax?
+   * Per IC 6-3.6, municipalities must have population >= 3,501.
+   */
+  canLevyOwnLIT(population: number): boolean;
+
+  /**
+   * Get the population threshold for LIT levy authority.
+   */
+  getLitPopulationThreshold(): number;
+}
+
+/**
+ * Indiana LIT Rules - pure functions for determining LIT eligibility.
+ *
+ * IMPORTANT: This is where "under 3,500 uses county LIT" becomes a single
+ * line of logic instead of being duplicated across wizard, UI, and engine.
+ */
+export const InLitRules: InLitRuleSet = {
+  canLevyOwnLIT(population: number): boolean {
+    // IC 6-3.6 requires population >= 3,501 to levy own LIT
+    return population >= 3501;
+  },
+
+  getLitPopulationThreshold(): number {
+    return 3501;
+  },
+};
+
+// =============================================================================
+// LIT TYPE DEFINITIONS
+// =============================================================================
 
 /**
  * LIT rate limits by type.

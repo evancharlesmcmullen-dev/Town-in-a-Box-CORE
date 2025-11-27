@@ -105,3 +105,31 @@ export interface RuleEvaluationResult {
   citations?: StatutoryCitation[];
   severity?: 'info' | 'warning' | 'error' | 'critical';
 }
+
+/**
+ * Minimal tenant identity for use in pack configuration.
+ * This is passed to getDefaultConfig() to derive state-specific defaults.
+ */
+export interface TenantIdentity {
+  tenantId: string;
+  displayName: string;
+  state: USStateCode;
+  entityClass: 'TOWN' | 'CITY' | 'TOWNSHIP' | 'COUNTY' | 'SPECIAL_DISTRICT';
+  population?: number;
+  countyName?: string;
+}
+
+/**
+ * A domain pack that can generate default configurations based on tenant identity.
+ * This is the new pattern for state packs that "think" - deriving config from rules.
+ */
+export interface StateDomainPack<TConfig = unknown> {
+  readonly state: USStateCode;
+  readonly domain: string;
+
+  /**
+   * Generate default configuration based on tenant identity.
+   * This is where state-specific logic lives (e.g., population thresholds for LIT).
+   */
+  getDefaultConfig(identity: TenantIdentity): Partial<TConfig>;
+}
