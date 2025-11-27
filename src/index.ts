@@ -112,11 +112,8 @@ export type {
   FeeCategory,
   FeeItem,
   FeeSchedule,
-  FeeCalculationParameter,
-  FeeCalculationContext,
   FeeCalculationInput,
   FeeCalculationLine,
-  FeeDiscountLine,
   FeeCalculationResult,
 } from './engines/fees/fee.types';
 
