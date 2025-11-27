@@ -161,10 +161,14 @@ export { InMemoryAssistanceReportingService } from './engines/township-assistanc
 // Service interface
 export type {
   ApraService,
+  AiApraService,
   CreateApraRequestInput,
   ApraRequestFilter,
   AddExemptionInput,
   RecordFulfillmentInput,
+  ParticularityAnalysis,
+  SuggestedExemption,
+  ScopeAnalysis,
 } from './engines/records/apra.service';
 
 // Types
@@ -183,6 +187,20 @@ export type {
 // Implementation
 export { InMemoryApraService } from './engines/records/in-memory-apra.service';
 export type { InMemoryApraSeedData } from './engines/records/in-memory-apra.service';
+export { AiApraServiceImpl } from './engines/records/ai-apra.service.impl';
+export { PostgresApraService } from './engines/records/postgres-apra.service';
+
+// APRA Fee Calculator
+export {
+  ApraFeeCalculator,
+  DEFAULT_INDIANA_FEE_SCHEDULE,
+} from './engines/records/apra-fee.calculator';
+export type {
+  ApraFeeInput,
+  ApraFeeResult,
+  ApraFeeLine,
+  ApraFeeSchedule,
+} from './engines/records/apra-fee.calculator';
 
 // APRA Calendar utilities (for deadline calculations)
 export {
@@ -190,6 +208,37 @@ export {
   addBusinessDays,
 } from './core/calendar/open-door.calendar';
 export type { ApraCalendarOptions } from './core/calendar/open-door.calendar';
+
+// =============================================================================
+// CORE: NOTIFICATIONS
+// =============================================================================
+
+// Types
+export type {
+  NotificationChannel,
+  NotificationPriority,
+  NotificationStatus,
+  Notification,
+  CreateNotificationInput,
+  NotificationFilter,
+} from './core/notifications/notification.types';
+
+// Service interface
+export type {
+  NotificationService,
+} from './core/notifications/notification.service';
+
+// Implementation
+export { InMemoryNotificationService } from './core/notifications/in-memory-notification.service';
+export type { InMemoryNotificationSeedData } from './core/notifications/in-memory-notification.service';
+
+// APRA Notification Service
+export { ApraNotificationService } from './engines/records/apra-notification.service';
+export type {
+  ApraNotificationConfig,
+  DeadlineCheckResult,
+  DeadlineAlert,
+} from './engines/records/apra-notification.service';
 
 // =============================================================================
 // LEGAL ENGINE (Indiana)

@@ -65,6 +65,53 @@ export interface RecordFulfillmentInput {
 }
 
 /**
+ * Result of AI particularity analysis.
+ */
+export interface ParticularityAnalysis {
+  /** Whether the request is reasonably particular per IC 5-14-3-3(a) */
+  isParticular: boolean;
+  /** Model's confidence in the assessment (0-1) */
+  confidence: number;
+  /** Explanation of the assessment */
+  reasoning: string;
+  /** Suggested clarification questions if not particular */
+  suggestedClarifications?: string[];
+}
+
+/**
+ * AI-suggested exemption for a records request.
+ */
+export interface SuggestedExemption {
+  /** Legal citation (e.g., "IC 5-14-3-4(b)(6)") */
+  citation: string;
+  /** Plain English explanation */
+  description: string;
+  /** Model's confidence in the suggestion (0-1) */
+  confidence: number;
+  /** Why this exemption may apply */
+  reasoning: string;
+}
+
+/**
+ * Result of AI scope analysis.
+ */
+export interface ScopeAnalysis {
+  /** Identified record types */
+  recordTypes: string[];
+  /** Suggested custodians/departments */
+  suggestedCustodians: string[];
+  /** Extracted keywords for search */
+  keywords: string[];
+  /** Detected date range (if any) */
+  dateRange?: {
+    start?: string;
+    end?: string;
+  };
+  /** Model's confidence in the extraction (0-1) */
+  confidence: number;
+}
+
+/**
  * Public service interface for the Records/APRA engine.
  *
  * Implementations will:
@@ -266,4 +313,96 @@ export interface ApraService {
     ctx: TenantContext,
     requestId: string
   ): Promise<ApraFulfillment[]>;
+}
+
+/**
+ * AI-enhanced APRA service interface.
+ *
+ * Extends base ApraService with AI-powered features for:
+ * - Analyzing request particularity per IC 5-14-3-3(a)
+ * - Suggesting applicable exemptions per IC 5-14-3-4
+ * - Extracting scope details from unstructured request text
+ * - Drafting response letters
+ *
+ * All AI results require human review before being acted upon.
+ */
+export interface AiApraService extends ApraService {
+  /**
+   * Analyze if a request is "reasonably particular" per IC 5-14-3-3(a).
+   *
+   * A request must identify with "reasonable particularity" the record
+   * being requested. This analysis helps staff determine if clarification
+   * is needed.
+   *
+   * @param ctx - Tenant context
+   * @param requestId - ID of the APRA request
+   * @returns Analysis with particularity assessment and suggestions
+   */
+  analyzeParticularity(
+    ctx: TenantContext,
+    requestId: string
+  ): Promise<ParticularityAnalysis>;
+
+  /**
+   * Suggest potentially applicable exemptions for a request.
+   *
+   * Analyzes the request description and scope to identify exemptions
+   * from IC 5-14-3-4 that may apply. Results require legal review.
+   *
+   * @param ctx - Tenant context
+   * @param requestId - ID of the APRA request
+   * @returns List of suggested exemptions with confidence scores
+   */
+  suggestExemptions(
+    ctx: TenantContext,
+    requestId: string
+  ): Promise<SuggestedExemption[]>;
+
+  /**
+   * Extract scope details from the request description.
+   *
+   * Uses AI to identify record types, custodians, keywords, and date
+   * ranges from unstructured request text.
+   *
+   * @param ctx - Tenant context
+   * @param requestId - ID of the APRA request
+   * @returns Extracted scope information
+   */
+  analyzeScope(
+    ctx: TenantContext,
+    requestId: string
+  ): Promise<ScopeAnalysis>;
+
+  /**
+   * Draft a response letter for a request.
+   *
+   * Generates a draft response based on the request status, any exemptions
+   * cited, and fulfillment details. Must be reviewed before sending.
+   *
+   * @param ctx - Tenant context
+   * @param requestId - ID of the APRA request
+   * @returns Draft response letter text
+   */
+  draftResponseLetter(
+    ctx: TenantContext,
+    requestId: string
+  ): Promise<string>;
+
+  /**
+   * Confirm or reject AI particularity analysis.
+   *
+   * Updates the request based on human review of the AI assessment.
+   *
+   * @param ctx - Tenant context
+   * @param requestId - ID of the APRA request
+   * @param isParticular - Human determination of particularity
+   * @param reason - Optional explanation for the determination
+   * @returns The updated request
+   */
+  reviewParticularity(
+    ctx: TenantContext,
+    requestId: string,
+    isParticular: boolean,
+    reason?: string
+  ): Promise<ApraRequest>;
 }
