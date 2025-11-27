@@ -592,4 +592,278 @@ describe('Records API', () => {
       expect(res.body).toHaveLength(1);
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // AI Endpoints
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('POST /api/records/requests/:id/ai/particularity', () => {
+    it('analyzes particularity of a request', async () => {
+      const createRes = await request(app)
+        .post('/api/records/requests')
+        .send({
+          requesterName: 'John Doe',
+          description: 'All emails from the mayor to the town council regarding the 2024 budget from January to March 2024',
+        });
+
+      const res = await request(app)
+        .post(`/api/records/requests/${createRes.body.id}/ai/particularity`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('isParticular');
+      expect(res.body).toHaveProperty('confidence');
+      expect(res.body).toHaveProperty('reasoning');
+      expect(typeof res.body.isParticular).toBe('boolean');
+      expect(typeof res.body.confidence).toBe('number');
+    });
+
+    it('returns 404 for non-existent request', async () => {
+      const res = await request(app)
+        .post('/api/records/requests/non-existent/ai/particularity');
+
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('POST /api/records/requests/:id/ai/exemptions', () => {
+    it('suggests exemptions for a request', async () => {
+      const createRes = await request(app)
+        .post('/api/records/requests')
+        .send({
+          requesterName: 'John Doe',
+          description: 'All personnel files for police officers',
+        });
+
+      const res = await request(app)
+        .post(`/api/records/requests/${createRes.body.id}/ai/exemptions`);
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+    });
+  });
+
+  describe('POST /api/records/requests/:id/ai/scope', () => {
+    it('analyzes scope of a request', async () => {
+      const createRes = await request(app)
+        .post('/api/records/requests')
+        .send({
+          requesterName: 'John Doe',
+          description: 'All emails from the mayor about the 2024 budget from January to March',
+        });
+
+      const res = await request(app)
+        .post(`/api/records/requests/${createRes.body.id}/ai/scope`);
+
+      expect(res.status).toBe(200);
+      // Should have at least some scope analysis fields
+      expect(res.body).toBeDefined();
+    });
+  });
+
+  describe('POST /api/records/requests/:id/ai/response-letter', () => {
+    it('drafts a response letter', async () => {
+      const createRes = await request(app)
+        .post('/api/records/requests')
+        .send({
+          requesterName: 'John Doe',
+          description: 'Budget records for 2024',
+        });
+
+      const res = await request(app)
+        .post(`/api/records/requests/${createRes.body.id}/ai/response-letter`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('requestId');
+      expect(res.body).toHaveProperty('letter');
+      expect(res.body.requestId).toBe(createRes.body.id);
+      expect(typeof res.body.letter).toBe('string');
+    });
+  });
+
+  describe('POST /api/records/requests/:id/ai/particularity/review', () => {
+    it('allows reviewing particularity determination', async () => {
+      const createRes = await request(app)
+        .post('/api/records/requests')
+        .send({
+          requesterName: 'John Doe',
+          description: 'All records',
+        });
+
+      const res = await request(app)
+        .post(`/api/records/requests/${createRes.body.id}/ai/particularity/review`)
+        .send({
+          isParticular: false,
+          reason: 'Too vague - needs to specify record type and date range',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.reasonablyParticular).toBe(false);
+      expect(res.body.particularityReason).toBe('Too vague - needs to specify record type and date range');
+    });
+
+    it('returns 400 when isParticular is missing', async () => {
+      const createRes = await request(app)
+        .post('/api/records/requests')
+        .send({
+          requesterName: 'John Doe',
+          description: 'All records',
+        });
+
+      const res = await request(app)
+        .post(`/api/records/requests/${createRes.body.id}/ai/particularity/review`)
+        .send({ reason: 'Some reason' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('isParticular');
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Fee Endpoints
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('POST /api/records/requests/:id/fees/quote', () => {
+    it('calculates fee quote for copies', async () => {
+      const createRes = await request(app)
+        .post('/api/records/requests')
+        .send({
+          requesterName: 'John Doe',
+          description: 'Budget documents',
+        });
+
+      const res = await request(app)
+        .post(`/api/records/requests/${createRes.body.id}/fees/quote`)
+        .send({
+          bwPages: 50,
+          colorPages: 5,
+          requiresMailing: true,
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('totalCents');
+      expect(res.body).toHaveProperty('formattedTotal');
+      expect(res.body).toHaveProperty('totalPages');
+      expect(res.body).toHaveProperty('isExtensive');
+      expect(res.body).toHaveProperty('lines');
+
+      // Check calculation: 50 * $0.10 + 5 * $0.25 + $5 mailing = $5 + $1.25 + $5 = $11.25
+      expect(res.body.totalCents).toBe(1125);
+      expect(res.body.totalPages).toBe(55);
+      expect(res.body.isExtensive).toBe(false);
+      expect(res.body.lines).toHaveLength(3); // BW, color, mailing
+    });
+
+    it('calculates extensive request fees with labor', async () => {
+      const createRes = await request(app)
+        .post('/api/records/requests')
+        .send({
+          requesterName: 'John Doe',
+          description: 'All emails for 10 years',
+        });
+
+      const res = await request(app)
+        .post(`/api/records/requests/${createRes.body.id}/fees/quote`)
+        .send({
+          bwPages: 100,
+          laborHours: 5, // 5 hours total, 3 chargeable after 2-hour threshold
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.isExtensive).toBe(true);
+
+      // Should include labor for 3 hours (over 2-hour threshold)
+      const laborLine = res.body.lines.find((l: { code: string }) => l.code === 'LABOR');
+      expect(laborLine).toBeDefined();
+      expect(laborLine.quantity).toBe(3); // 5 - 2 = 3 chargeable hours
+    });
+
+    it('returns 404 for non-existent request', async () => {
+      const res = await request(app)
+        .post('/api/records/requests/non-existent/fees/quote')
+        .send({ bwPages: 10 });
+
+      expect(res.status).toBe(404);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Deadline Check Endpoint
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('POST /api/records/deadlines/check', () => {
+    it('checks deadlines for all open requests', async () => {
+      // Create a request (will have a 7 business day deadline)
+      await request(app)
+        .post('/api/records/requests')
+        .send({
+          requesterName: 'John Doe',
+          description: 'Some records',
+        });
+
+      const res = await request(app)
+        .post('/api/records/deadlines/check');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('requestsChecked');
+      expect(res.body).toHaveProperty('approachingDeadline');
+      expect(res.body).toHaveProperty('pastDeadline');
+      expect(res.body).toHaveProperty('notificationsSent');
+      expect(res.body).toHaveProperty('checkedAt');
+
+      expect(typeof res.body.requestsChecked).toBe('number');
+      expect(Array.isArray(res.body.approachingDeadline)).toBe(true);
+      expect(Array.isArray(res.body.pastDeadline)).toBe(true);
+    });
+
+    it('returns empty results when no requests exist', async () => {
+      const res = await request(app)
+        .post('/api/records/deadlines/check');
+
+      expect(res.status).toBe(200);
+      expect(res.body.requestsChecked).toBe(0);
+      expect(res.body.approachingDeadline).toHaveLength(0);
+      expect(res.body.pastDeadline).toHaveLength(0);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Multi-Tenant Isolation
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('Multi-tenant isolation', () => {
+    it('isolates requests between tenants', async () => {
+      // Create request as tenant A
+      const reqA = await request(app)
+        .post('/api/records/requests')
+        .set('x-tenant-id', 'tenant-a')
+        .send({
+          requesterName: 'User A',
+          description: 'Records for A',
+        });
+
+      // Create request as tenant B
+      await request(app)
+        .post('/api/records/requests')
+        .set('x-tenant-id', 'tenant-b')
+        .send({
+          requesterName: 'User B',
+          description: 'Records for B',
+        });
+
+      // List as tenant A
+      const listA = await request(app)
+        .get('/api/records/requests')
+        .set('x-tenant-id', 'tenant-a');
+
+      expect(listA.body).toHaveLength(1);
+      expect(listA.body[0].requesterName).toBe('User A');
+
+      // Tenant B cannot access tenant A's request
+      const getB = await request(app)
+        .get(`/api/records/requests/${reqA.body.id}`)
+        .set('x-tenant-id', 'tenant-b');
+
+      expect(getB.status).toBe(404);
+    });
+  });
 });
