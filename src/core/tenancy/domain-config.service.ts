@@ -31,10 +31,12 @@ import {
 // In production, you'd have a bootstrap file that imports all state packs
 import '../../states/in/finance';
 import '../../states/in/meetings';
+import '../../states/in/apra';
 
 // Re-export for convenience (optional - types only)
 import type { INFinanceConfig } from '../../states/in/finance/in-finance.config';
 import type { INMeetingsConfig } from '../../states/in/meetings/in-meetings.config';
+import type { INApraConfig } from '../../states/in/apra/in-apra.config';
 
 /**
  * Example: Get finance configuration for any Indiana tenant.
@@ -134,13 +136,62 @@ export function getMeetingsConfigWithMetadata(
 }
 
 /**
+ * Get APRA (Access to Public Records Act) configuration for any Indiana tenant.
+ *
+ * This function demonstrates the generic pattern for the APRA domain.
+ * The tenant's identity determines the computed defaults (delivery methods,
+ * retention periods, etc. based on entity class and population).
+ *
+ * @param tenantConfig - The tenant's full configuration (StateTenantConfig)
+ * @param tenantIdentity - The tenant's identity (TenantIdentity)
+ * @returns The resolved APRA config, or undefined if not available
+ *
+ * @example
+ * ```typescript
+ * // For any Indiana tenant:
+ * const apraConfig = getApraConfig(someTenantConfig, someTenantIdentity);
+ *
+ * if (apraConfig) {
+ *   // Config is computed based on tenant's identity (entity class, population, etc.)
+ *   console.log('Response days:', apraConfig.standardResponseDays);
+ *   console.log('Delivery methods:', apraConfig.allowedDeliveryMethods);
+ *   console.log('Copy fee:', apraConfig.defaultPerPageFee);
+ * }
+ * ```
+ */
+export function getApraConfig(
+  tenantConfig: StateTenantConfig,
+  tenantIdentity: TenantIdentity
+): INApraConfig | undefined {
+  // Use the generic resolver - it finds the right pack based on state + domain
+  return buildDomainConfig<INApraConfig>(tenantConfig, tenantIdentity, 'apra');
+}
+
+/**
+ * Get APRA configuration with metadata.
+ *
+ * Returns additional metadata about the resolution process.
+ * Useful for debugging and admin UIs.
+ */
+export function getApraConfigWithMetadata(
+  tenantConfig: StateTenantConfig,
+  tenantIdentity: TenantIdentity
+) {
+  return buildDomainConfigWithMetadata<INApraConfig>(
+    tenantConfig,
+    tenantIdentity,
+    'apra'
+  );
+}
+
+/**
  * Example: Get any domain configuration for a tenant.
  *
  * This is the most generic pattern - works with any domain.
  *
  * @param tenantConfig - The tenant's full configuration
  * @param tenantIdentity - The tenant's identity
- * @param domain - The domain to resolve (e.g., 'finance', 'meetings')
+ * @param domain - The domain to resolve (e.g., 'finance', 'meetings', 'apra')
  * @returns The resolved config, or undefined if not available
  */
 export function getDomainConfig<TConfig = unknown>(
@@ -296,5 +347,65 @@ export function checkDomainAvailable(
  * const cityConfig = getMeetingsConfig(cityTenantConfig, cityIdentity);
  * // cityConfig.governingBodyTypes includes BZA, REDEVELOPMENT, PARKS_BOARD
  * // cityConfig.noticeChannels includes 'newspaper' (larger entity)
+ * ```
+ */
+
+/**
+ * Example showing how any tenant's APRA config is resolved:
+ *
+ * ```typescript
+ * import { StateTenantConfig, TenantIdentity } from '../state';
+ * import { getApraConfig } from './domain-config.service';
+ *
+ * // Any Indiana tenant (small town example)
+ * const townIdentity: TenantIdentity = {
+ *   tenantId: 'example-town',
+ *   displayName: 'Example Town',
+ *   state: 'IN',
+ *   entityClass: 'TOWN',
+ *   population: 2350,
+ *   countyName: 'Example County',
+ * };
+ *
+ * const townConfig: StateTenantConfig = {
+ *   tenantId: 'example-town',
+ *   name: 'Example Town',
+ *   state: 'IN',
+ *   jurisdiction: { ... },
+ *   dataStore: { vendor: 'memory', databaseName: 'example_town' },
+ *   enabledModules: [
+ *     { moduleId: 'apra', enabled: true, config: { maxSearchTimeWithoutChargeMinutes: 60 } },
+ *   ],
+ * };
+ *
+ * const apraConfig = getApraConfig(townConfig, townIdentity);
+ *
+ * // Result:
+ * // {
+ * //   domain: 'apra',
+ * //   enabled: true,
+ * //   standardResponseDays: 7,                 // <-- IC 5-14-3-9 baseline
+ * //   businessDaysOnly: true,
+ * //   allowCopyFees: true,
+ * //   defaultPerPageFee: 0.10,                 // <-- Reasonable fee per IC 5-14-3-8
+ * //   allowedDeliveryMethods: ['email', 'postal', 'inPerson'],  // <-- Smaller town, no portal
+ * //   maxSearchTimeWithoutChargeMinutes: 60,   // <-- From tenant override
+ * //   logRequests: true,
+ * //   requestLogRetentionYears: 2,             // <-- Smaller entity retention
+ * //   ...
+ * // }
+ *
+ * // A city (entityClass: 'CITY') would get different computed values:
+ * const cityIdentity: TenantIdentity = {
+ *   ...townIdentity,
+ *   tenantId: 'example-city',
+ *   displayName: 'Example City',
+ *   entityClass: 'CITY',
+ *   population: 15000,
+ * };
+ *
+ * const cityConfig = getApraConfig(cityTenantConfig, cityIdentity);
+ * // cityConfig.allowedDeliveryMethods includes 'portal' (larger entity)
+ * // cityConfig.requestLogRetentionYears === 3 (longer retention for larger entity)
  * ```
  */
