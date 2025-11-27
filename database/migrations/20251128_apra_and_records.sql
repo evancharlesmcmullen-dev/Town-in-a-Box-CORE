@@ -1,6 +1,9 @@
 -- 20251128_apra_and_records.sql
 -- APRA (public records) + basic records storage
 -- Depends on: 20251127_core_and_meetings.sql (tenants, users, files, audit_log, etc.)
+--
+-- Status values align with TypeScript types in src/engines/records/apra.types.ts:
+--   RECEIVED, NEEDS_CLARIFICATION, IN_REVIEW, PARTIALLY_FULFILLED, FULFILLED, DENIED, CLOSED
 
 BEGIN;
 
@@ -17,25 +20,27 @@ CREATE TABLE IF NOT EXISTS apra_requests (
   requester_phone TEXT,
 
   received_at TIMESTAMPTZ NOT NULL,
-  channel TEXT NOT NULL,              -- 'email' | 'portal' | 'mail' | 'inPerson'
 
-  raw_text TEXT NOT NULL,
+  -- The text of the records request (aligned with ApraRequest.description)
+  description TEXT NOT NULL,
 
-  -- particularity analysis (per APRA case law)
-  reasonably_particular BOOLEAN,      -- NULL until evaluated
-  particularity_reason TEXT,          -- explanation tying to case law
+  -- particularity analysis (per APRA case law IC 5-14-3-3)
+  reasonably_particular BOOLEAN NOT NULL DEFAULT true,
+  particularity_reason TEXT,
 
   -- high-level status + timing
-  current_status TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'needsClarification' | 'inSearch' | 'partialDeny' | 'fulfilled' | 'closed'
-  statutory_deadline TIMESTAMPTZ,    -- when initial response is due
+  -- Status values: 'RECEIVED' | 'NEEDS_CLARIFICATION' | 'IN_REVIEW' | 'PARTIALLY_FULFILLED' | 'FULFILLED' | 'DENIED' | 'CLOSED'
+  status TEXT NOT NULL DEFAULT 'RECEIVED',
+  statutory_deadline_at TIMESTAMPTZ,    -- when initial response is due (7 business days per IC 5-14-3-9)
   closed_at TIMESTAMPTZ,
 
   created_by_user_id UUID REFERENCES users(id),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_apra_requests_tenant_status
-  ON apra_requests (tenant_id, current_status);
+  ON apra_requests (tenant_id, status);
 
 ALTER TABLE apra_requests ENABLE ROW LEVEL SECURITY;
 CREATE POLICY apra_requests_tenant_isolation ON apra_requests
@@ -53,8 +58,8 @@ CREATE TABLE IF NOT EXISTS apra_request_scopes (
   request_id UUID NOT NULL REFERENCES apra_requests(id) ON DELETE CASCADE,
 
   record_type TEXT,           -- 'email' | 'contract' | 'meetingMinutes' | 'policeReport' | etc.
-  date_from   DATE,
-  date_to     DATE,
+  date_range_start DATE,      -- aligned with ApraRequestScope.dateRangeStart
+  date_range_end DATE,        -- aligned with ApraRequestScope.dateRangeEnd
   keywords    TEXT[],
   custodians  TEXT[],         -- names/emails of likely record holders
 
@@ -72,7 +77,7 @@ CREATE POLICY apra_scopes_tenant_isolation ON apra_request_scopes
 
 -- ============================================
 -- APRA STATUS HISTORY
--- Detailed status history beyond apra_requests.current_status
+-- Detailed status history for audit trail (aligned with ApraStatusHistoryEntry)
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS apra_status_history (
@@ -80,10 +85,11 @@ CREATE TABLE IF NOT EXISTS apra_status_history (
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   request_id UUID NOT NULL REFERENCES apra_requests(id) ON DELETE CASCADE,
 
-  status TEXT NOT NULL,        -- 'pending' | 'needsClarification' | 'inSearch' | 'partialDeny' | 'fulfilled' | 'closed'
+  old_status TEXT,            -- previous status (NULL for initial entry)
+  new_status TEXT NOT NULL,   -- new status value
   changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   changed_by_user_id UUID REFERENCES users(id),
-  notes TEXT
+  note TEXT                   -- explanation for the status change
 );
 
 CREATE INDEX IF NOT EXISTS idx_apra_status_history_request
@@ -96,7 +102,8 @@ CREATE POLICY apra_status_history_tenant_isolation ON apra_status_history
 
 -- ============================================
 -- APRA CLARIFICATIONS
--- For "not reasonably particular" or ambiguous requests
+-- For "not reasonably particular" or ambiguous requests (IC 5-14-3-9(b))
+-- Aligned with ApraClarification type
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS apra_clarifications (
@@ -106,10 +113,10 @@ CREATE TABLE IF NOT EXISTS apra_clarifications (
 
   sent_at TIMESTAMPTZ NOT NULL,
   sent_by_user_id UUID REFERENCES users(id),
-  message TEXT NOT NULL,
+  message_to_requester TEXT NOT NULL,    -- message sent asking for clarification
 
-  response_received_at TIMESTAMPTZ,
-  response_text TEXT,
+  responded_at TIMESTAMPTZ,              -- when requester responded
+  requester_response TEXT,               -- what the requester said
 
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -124,7 +131,8 @@ CREATE POLICY apra_clarifications_tenant_isolation ON apra_clarifications
 
 -- ============================================
 -- APRA EXEMPTIONS
--- Specific statutory grounds for withholding/redaction
+-- Specific statutory grounds for withholding/redaction (IC 5-14-3-4)
+-- Aligned with ApraExemptionCitation type
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS apra_exemptions (
@@ -132,12 +140,13 @@ CREATE TABLE IF NOT EXISTS apra_exemptions (
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   request_id UUID NOT NULL REFERENCES apra_requests(id) ON DELETE CASCADE,
 
-  exemption_code TEXT NOT NULL,     -- e.g. 'IC 5-14-3-4(a)(1)'
-  description TEXT,                 -- short label for the exemption
-  justification TEXT NOT NULL,      -- fact-specific reasoning, not boilerplate
+  citation TEXT NOT NULL,             -- legal citation e.g. 'IC 5-14-3-4(a)(1)'
+  description TEXT NOT NULL,          -- plain English explanation of why exemption applies
+  applies_to_scope_id UUID REFERENCES apra_request_scopes(id),  -- optional: if exemption applies to specific scope
 
   applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  applied_by_user_id UUID REFERENCES users(id)
+  applied_by_user_id UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_apra_exemptions_request
@@ -151,6 +160,7 @@ CREATE POLICY apra_exemptions_tenant_isolation ON apra_exemptions
 -- ============================================
 -- APRA FULFILLMENTS
 -- How the request was ultimately answered
+-- Aligned with ApraFulfillment type
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS apra_fulfillments (
@@ -159,11 +169,11 @@ CREATE TABLE IF NOT EXISTS apra_fulfillments (
   request_id UUID NOT NULL REFERENCES apra_requests(id) ON DELETE CASCADE,
 
   fulfilled_at TIMESTAMPTZ NOT NULL,
-  delivery_method TEXT NOT NULL,     -- 'email' | 'portal' | 'mail' | 'pickup'
+  delivery_method TEXT NOT NULL,      -- 'EMAIL' | 'PORTAL' | 'MAIL' | 'IN_PERSON'
   notes TEXT,
 
-  fees_charged NUMERIC(10,2) DEFAULT 0,
-  fee_breakdown JSONB,               -- optional structured detail
+  total_fees_cents INTEGER DEFAULT 0, -- fees in cents (per IC 5-14-3-8)
+  fee_breakdown JSONB,                -- optional structured detail
 
   created_by_user_id UUID REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
