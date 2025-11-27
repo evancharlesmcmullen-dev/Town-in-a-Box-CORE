@@ -20,6 +20,25 @@ export interface ScheduleMeetingInput {
   location: string;
 }
 
+// Input for marking a notice as posted.
+export interface MarkNoticePostedInput {
+  postedAt: Date;
+  postedByUserId: string;
+  methods: string[];             // e.g. ['physicalPosting', 'website', 'email']
+  locations: string[];           // e.g. ['Town Hall', 'Library']
+  notes?: string;
+}
+
+// Open-door compliance information for a meeting.
+export interface OpenDoorCompliance {
+  requiredPostedBy: Date;
+  actualPostedAt?: Date;
+  timeliness: 'onTime' | 'late' | 'notPosted';
+  methods: string[];
+  locations: string[];
+  notes?: string;
+}
+
 // Filter options for listing meetings.
 export interface MeetingFilter {
   bodyId?: string;
@@ -79,9 +98,24 @@ export interface MeetingsService {
     vote: VoteRecord
   ): Promise<void>;
 
+  /**
+   * Cancel a meeting.
+   */
+  cancelMeeting(
+    ctx: TenantContext,
+    meetingId: string
+  ): Promise<Meeting>;
+
+  /**
+   * Mark notice as posted for a meeting and compute compliance.
+   */
+  markNoticePosted(
+    ctx: TenantContext,
+    meetingId: string,
+    input: MarkNoticePostedInput
+  ): Promise<{ meeting: Meeting; openDoorCompliance: OpenDoorCompliance }>;
+
   // Later we can add:
   // - attachAgenda(...)
   // - attachRecording(...)
-  // - cancelMeeting(...)
-  // - markNoticePosted(...)
 }

@@ -14,6 +14,8 @@ import {
   MeetingsService,
   ScheduleMeetingInput,
   MeetingFilter,
+  MarkNoticePostedInput,
+  OpenDoorCompliance,
 } from './meetings.service';
 
 export interface InMemoryMeetingsSeedData {
@@ -147,5 +149,88 @@ export class InMemoryMeetingsService implements MeetingsService {
     }
 
     this.votes.push(vote.id ? vote : { ...vote, id: randomUUID() });
+  }
+
+  async cancelMeeting(
+    ctx: TenantContext,
+    meetingId: string
+  ): Promise<Meeting> {
+    const meeting = this.meetings.find(
+      (m) => m.id === meetingId && m.tenantId === ctx.tenantId
+    );
+
+    if (!meeting) {
+      throw new Error('Meeting not found for tenant');
+    }
+
+    meeting.status = 'cancelled';
+    meeting.cancelledAt = new Date();
+    meeting.cancelledByUserId = ctx.userId;
+
+    return meeting;
+  }
+
+  async markNoticePosted(
+    ctx: TenantContext,
+    meetingId: string,
+    input: MarkNoticePostedInput
+  ): Promise<{ meeting: Meeting; openDoorCompliance: OpenDoorCompliance }> {
+    const meeting = this.meetings.find(
+      (m) => m.id === meetingId && m.tenantId === ctx.tenantId
+    );
+
+    if (!meeting) {
+      throw new Error('Meeting not found for tenant');
+    }
+
+    meeting.noticePostedAt = input.postedAt;
+    meeting.status = 'noticed';
+
+    // Compute required posted by time (48 hours before meeting for regular)
+    const hoursRequired = meeting.type === 'emergency' ? 0 : 48;
+    const requiredPostedBy = new Date(
+      meeting.scheduledStart.getTime() - hoursRequired * 60 * 60 * 1000
+    );
+
+    // Determine timeliness
+    let timeliness: 'onTime' | 'late' | 'notPosted';
+    if (!input.postedAt) {
+      timeliness = 'notPosted';
+    } else if (input.postedAt <= requiredPostedBy) {
+      timeliness = 'onTime';
+    } else {
+      timeliness = 'late';
+    }
+
+    const compliance: OpenDoorCompliance = {
+      requiredPostedBy,
+      actualPostedAt: input.postedAt,
+      timeliness,
+      methods: input.methods,
+      locations: input.locations,
+      notes: input.notes,
+    };
+
+    return { meeting, openDoorCompliance: compliance };
+  }
+
+  /**
+   * Update a meeting's AI summary. Used by AI routes.
+   */
+  async updateAiSummary(
+    ctx: TenantContext,
+    meetingId: string,
+    summary: string
+  ): Promise<Meeting> {
+    const meeting = this.meetings.find(
+      (m) => m.id === meetingId && m.tenantId === ctx.tenantId
+    );
+
+    if (!meeting) {
+      throw new Error('Meeting not found for tenant');
+    }
+
+    meeting.aiCouncilSummary = summary;
+    return meeting;
   }
 }

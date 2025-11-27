@@ -90,6 +90,11 @@ export interface Meeting {
 
   noticePostedAt?: Date;      // when notice was actually posted
   noticeId?: string;          // link into Notice engine later
+
+  cancelledAt?: Date;         // when meeting was cancelled
+  cancelledByUserId?: string; // who cancelled it
+
+  aiCouncilSummary?: string;  // AI-generated summary of agenda
 }
 
 /**
