@@ -7,16 +7,22 @@
 // Or directly: npx ts-node-dev --respawn src/http/server.ts
 
 import express, { Express, Request, Response } from 'express';
+import { Pool } from 'pg';
 import {
   createAiBootstrap,
   InMemoryMeetingsService,
   AiBootstrap,
 } from '../index';
+import { ApraService } from '../engines/records/apra.service';
 import { InMemoryApraService } from '../engines/records/in-memory-apra.service';
+import { PostgresApraService } from '../engines/records/postgres-apra.service';
 import { AiApraServiceImpl } from '../engines/records/ai-apra.service.impl';
 import { ApraFeeCalculator } from '../engines/records/apra-fee.calculator';
 import { ApraNotificationService } from '../engines/records/apra-notification.service';
+import { NotificationService } from '../core/notifications/notification.service';
 import { InMemoryNotificationService } from '../core/notifications/in-memory-notification.service';
+import { EmailNotificationService } from '../core/notifications/email-notification.service';
+import { TenantAwareDb } from '../db/tenant-aware-db';
 import { createMeetingsRouter } from './routes/meetings.routes';
 import { createRecordsRouter } from './routes/records.routes';
 import { requestLogger, tenantContextMiddleware } from './middleware';
@@ -57,10 +63,36 @@ export async function createServer(config: Partial<ServerConfig> = {}): Promise<
   const meetings = ai.aiMeetingsService(baseMeetings);
 
   // Create APRA/records services
-  const baseRecords = new InMemoryApraService();
+  // Select implementation based on environment:
+  // - DATABASE_URL set → PostgresApraService (production)
+  // - Otherwise → InMemoryApraService (development/testing)
+  let baseRecords: ApraService;
+  if (process.env.DATABASE_URL) {
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const db = new TenantAwareDb(pool);
+    baseRecords = new PostgresApraService(db);
+    console.log('[Server] Using PostgresApraService (DATABASE_URL detected)');
+  } else {
+    baseRecords = new InMemoryApraService();
+    console.log('[Server] Using InMemoryApraService (no DATABASE_URL)');
+  }
+
   const aiApra = new AiApraServiceImpl(baseRecords, ai.core);
   const feeCalculator = new ApraFeeCalculator();
-  const notificationService = new InMemoryNotificationService();
+
+  // Select notification service based on environment:
+  // - EMAIL_TRANSPORT set (not 'console') → EmailNotificationService (production)
+  // - Otherwise → InMemoryNotificationService (development/testing)
+  let notificationService: NotificationService;
+  const emailTransport = process.env.EMAIL_TRANSPORT;
+  if (emailTransport && emailTransport !== 'console') {
+    notificationService = new EmailNotificationService();
+    console.log(`[Server] Using EmailNotificationService (transport: ${emailTransport})`);
+  } else {
+    notificationService = new InMemoryNotificationService();
+    console.log('[Server] Using InMemoryNotificationService');
+  }
+
   const apraNotifications = new ApraNotificationService(
     baseRecords,
     notificationService
