@@ -14,7 +14,13 @@ import {
   MeetingsService,
   ScheduleMeetingInput,
   MeetingFilter,
+  CancelMeetingInput,
+  NoticePostedResult,
 } from './meetings.service';
+import {
+  calculateNoticeDeadline,
+  isNoticeCompliant,
+} from '../../core/calendar/indiana-business-calendar';
 
 export interface InMemoryMeetingsSeedData {
   meetings?: Meeting[];
@@ -147,5 +153,72 @@ export class InMemoryMeetingsService implements MeetingsService {
     }
 
     this.votes.push(vote.id ? vote : { ...vote, id: randomUUID() });
+  }
+
+  async cancelMeeting(
+    ctx: TenantContext,
+    id: string,
+    input?: CancelMeetingInput
+  ): Promise<Meeting> {
+    const meeting = this.meetings.find(
+      (m) => m.id === id && m.tenantId === ctx.tenantId
+    );
+
+    if (!meeting) {
+      throw new Error('Meeting not found');
+    }
+
+    // Idempotent: already cancelled
+    if (meeting.status === 'cancelled') {
+      return meeting;
+    }
+
+    // Cannot cancel adjourned meeting
+    if (meeting.status === 'adjourned') {
+      throw new Error('Cannot cancel an adjourned meeting');
+    }
+
+    // Update meeting in place
+    meeting.status = 'cancelled';
+    meeting.cancelledAt = new Date();
+    meeting.cancellationReason = input?.reason;
+
+    return meeting;
+  }
+
+  async markNoticePosted(
+    ctx: TenantContext,
+    id: string,
+    postedAt?: Date
+  ): Promise<NoticePostedResult> {
+    const now = postedAt ?? new Date();
+
+    const meeting = this.meetings.find(
+      (m) => m.id === id && m.tenantId === ctx.tenantId
+    );
+
+    if (!meeting) {
+      throw new Error('Meeting not found');
+    }
+
+    const deadline = calculateNoticeDeadline(meeting.scheduledStart);
+    const compliant = isNoticeCompliant(now, meeting.scheduledStart);
+
+    // Update status to 'noticed' if currently 'planned'
+    if (meeting.status === 'planned') {
+      meeting.status = 'noticed';
+    }
+
+    // Set notice timestamps
+    if (!meeting.noticePostedAt) {
+      meeting.noticePostedAt = now;
+    }
+    meeting.lastNoticePostedAt = now;
+
+    return {
+      meeting,
+      isCompliant: compliant,
+      deadline,
+    };
   }
 }

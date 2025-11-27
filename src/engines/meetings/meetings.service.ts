@@ -28,6 +28,18 @@ export interface MeetingFilter {
   status?: MeetingStatus;
 }
 
+// Input for cancelling a meeting.
+export interface CancelMeetingInput {
+  reason?: string;
+}
+
+// Result of marking notice posted, includes compliance info.
+export interface NoticePostedResult {
+  meeting: Meeting;
+  isCompliant: boolean;
+  deadline: Date;
+}
+
 /**
  * Public service interface for the Meetings engine.
  *
@@ -79,9 +91,32 @@ export interface MeetingsService {
     vote: VoteRecord
   ): Promise<void>;
 
-  // Later we can add:
+  /**
+   * Cancel a scheduled meeting.
+   * - Idempotent: returns the meeting unchanged if already cancelled.
+   * - Throws if meeting is adjourned (cannot cancel a completed meeting).
+   */
+  cancelMeeting(
+    ctx: TenantContext,
+    id: string,
+    input?: CancelMeetingInput
+  ): Promise<Meeting>;
+
+  /**
+   * Mark that Open Door notice has been posted for a meeting.
+   * Updates status to 'noticed' if currently 'planned'.
+   * Validates 48 business hour compliance (IC 5-14-1.5-5).
+   *
+   * @param postedAt - When the notice was posted (defaults to now)
+   * @returns The updated meeting and compliance info
+   */
+  markNoticePosted(
+    ctx: TenantContext,
+    id: string,
+    postedAt?: Date
+  ): Promise<NoticePostedResult>;
+
+  // Future additions:
   // - attachAgenda(...)
   // - attachRecording(...)
-  // - cancelMeeting(...)
-  // - markNoticePosted(...)
 }
