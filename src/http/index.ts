@@ -1,7 +1,7 @@
 // src/http/index.ts
 // HTTP module exports.
 
-export { createApp, startServer, ServerConfig } from './server';
+export { createServer, startServer, ServerConfig } from './server';
 export { AiClient, MockAiClient, ScannedDeadline } from './ai.routes';
 export {
   AppError,

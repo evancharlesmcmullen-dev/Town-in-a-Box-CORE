@@ -153,7 +153,8 @@ export class AiMeetingsServiceImpl implements AiMeetingsService {
     }
 
     const summary = await this.aiProvider.generateSummary(agendaText);
-    meeting.aiSummary = summary;
+    meeting.aiCouncilSummary = summary;
+    meeting.aiSummaryGeneratedAt = new Date().toISOString();
 
     return meeting;
   }
@@ -170,11 +171,11 @@ export class AiMeetingsServiceImpl implements AiMeetingsService {
 
     const extracted = await this.aiProvider.extractDeadlines(packetText);
 
-    meeting.aiDeadlines = extracted.map((d) => ({
+    meeting.aiExtractedDeadlines = extracted.map((d): MeetingDeadline => ({
       id: randomUUID(),
-      description: d.description,
-      dueDate: d.dueDate,
-      source: d.source,
+      meetingId: meeting.id,
+      label: d.description,
+      dueDate: d.dueDate.toISOString().split('T')[0],
       isConfirmed: false,
     }));
 
@@ -192,13 +193,13 @@ export class AiMeetingsServiceImpl implements AiMeetingsService {
       throw new Error('Meeting not found for tenant');
     }
 
-    const deadline = meeting.aiDeadlines?.find((d) => d.id === deadlineId);
+    const deadline = meeting.aiExtractedDeadlines?.find((d) => d.id === deadlineId);
     if (!deadline) {
       throw new Error('Deadline not found');
     }
 
     deadline.isConfirmed = isConfirmed;
-    deadline.reviewedAt = new Date();
+    deadline.reviewedAt = new Date().toISOString();
     deadline.reviewedByUserId = ctx.userId;
 
     return meeting;

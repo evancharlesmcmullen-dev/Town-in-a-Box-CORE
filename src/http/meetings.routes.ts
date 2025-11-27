@@ -168,7 +168,8 @@ export function createMeetingsRouter(
       assertOptionalString(body.notes, 'notes');
 
       try {
-        const result = await meetingsService.markNoticePosted(ctx, id, {
+        const result = await meetingsService.markNoticePosted(ctx, {
+          meetingId: id,
           postedAt,
           postedByUserId: body.postedByUserId,
           methods: body.methods,

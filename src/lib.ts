@@ -8,9 +8,9 @@ export * from './core/tenancy/in-memory-tenancy.service';
 
 // Core - AI
 export * from './core/ai/ai.types';
-export * from './core/ai/ai.services';
+export * from './core/ai/ai.service';
 export * from './core/ai/in-memory-ai.service';
-export * from './core/ai/ai-bootstrap';
+export * from './core/ai/ai.bootstrap';
 
 // Core - Legal
 export * from './core/legal/legal-engine';
@@ -30,7 +30,11 @@ export * from './core/notices/in-memory-notice.service';
 export * from './engines/meetings/meeting.types';
 export * from './engines/meetings/meetings.service';
 export * from './engines/meetings/in-memory-meetings.service';
-export * from './engines/meetings/ai-meetings.service';
+export {
+  AiMeetingsProvider,
+  MockAiMeetingsProvider,
+  AiMeetingsServiceImpl,
+} from './engines/meetings/ai-meetings.service';
 
 // Engines - Records (APRA)
 export * from './engines/records/apra.types';
