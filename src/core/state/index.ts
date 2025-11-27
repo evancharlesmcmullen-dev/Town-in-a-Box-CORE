@@ -2,6 +2,7 @@
 
 export * from './state.types';
 export * from './tenant-config.types';
+export * from './unit-type';
 export {
   StateRegistry,
   stateRegistry,

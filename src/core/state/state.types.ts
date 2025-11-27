@@ -107,6 +107,21 @@ export interface RuleEvaluationResult {
 }
 
 /**
+ * Canonical unit type for local government classification.
+ * This is the standard type used throughout the system to distinguish
+ * between different kinds of local government units.
+ *
+ * @see src/core/state/unit-type.ts for helper functions
+ */
+export type UnitType = 'TOWN' | 'CITY' | 'TOWNSHIP' | 'COUNTY' | 'SPECIAL_DISTRICT' | 'OTHER';
+
+/**
+ * Alias for UnitType used in TenantIdentity (excludes 'OTHER').
+ * Kept for backwards compatibility with existing code.
+ */
+export type EntityClass = Exclude<UnitType, 'OTHER'>;
+
+/**
  * Minimal tenant identity for use in pack configuration.
  * This is passed to getDefaultConfig() to derive state-specific defaults.
  */
@@ -114,7 +129,14 @@ export interface TenantIdentity {
   tenantId: string;
   displayName: string;
   state: USStateCode;
-  entityClass: 'TOWN' | 'CITY' | 'TOWNSHIP' | 'COUNTY' | 'SPECIAL_DISTRICT';
+  /**
+   * The type of local government unit.
+   * Use helper functions from unit-type.ts to check unit type:
+   * - isTownship(identity.entityClass)
+   * - isTown(identity.entityClass)
+   * - isCity(identity.entityClass)
+   */
+  entityClass: EntityClass;
   population?: number;
   countyName?: string;
 }
