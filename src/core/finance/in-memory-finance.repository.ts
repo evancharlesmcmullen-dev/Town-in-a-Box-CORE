@@ -62,7 +62,10 @@ export class InMemoryFinanceRepository implements FinanceRepository {
 
     if (filter?.codes && filter.codes.length > 0) {
       const codeSet = new Set(filter.codes);
-      results = results.filter((f) => codeSet.has(f.code));
+      results = results.filter((f) => {
+        if (!f.code) return false;
+        return codeSet.has(f.code);
+      });
     }
 
     if (filter?.activeOnly) {
@@ -137,26 +140,30 @@ export class InMemoryFinanceRepository implements FinanceRepository {
     let results = [...this.transactions];
 
     if (filter?.fromDate) {
-      results = results.filter((t) => t.date >= filter.fromDate!);
+      const from = filter.fromDate;
+      results = results.filter((t) => t.date && t.date >= from);
     }
 
     if (filter?.toDate) {
-      results = results.filter((t) => t.date <= filter.toDate!);
+      const to = filter.toDate;
+      results = results.filter((t) => t.date && t.date <= to);
     }
 
     if (filter?.fundIds && filter.fundIds.length > 0) {
       const fundSet = new Set(filter.fundIds);
-      results = results.filter((t) => fundSet.has(t.fundId));
+      results = results.filter((t) => t.fundId && fundSet.has(t.fundId));
     }
 
     if (filter?.accountIds && filter.accountIds.length > 0) {
       const accountSet = new Set(filter.accountIds);
-      results = results.filter((t) => accountSet.has(t.accountId));
+      results = results.filter(
+        (t) => t.accountId && accountSet.has(t.accountId)
+      );
     }
 
     if (filter?.types && filter.types.length > 0) {
       const typeSet = new Set<TransactionType>(filter.types);
-      results = results.filter((t) => typeSet.has(t.type));
+      results = results.filter((t) => t.type && typeSet.has(t.type));
     }
 
     return results;

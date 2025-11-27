@@ -16,5 +16,5 @@ export interface AssistanceExportSummary {
   range: AssistanceStatsRange;
   rows: AssistanceExportRow[];
   totalBenefitsCents: number;
-  householdBuckets?: HouseholdSizeBucketStats[];
+  householdBuckets: HouseholdSizeBucketStats[];
 }
