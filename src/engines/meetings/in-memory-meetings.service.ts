@@ -14,6 +14,7 @@ import {
   MeetingsService,
   ScheduleMeetingInput,
   MeetingFilter,
+  MarkNoticePostedInput,
 } from './meetings.service';
 
 export interface InMemoryMeetingsSeedData {
@@ -147,5 +148,50 @@ export class InMemoryMeetingsService implements MeetingsService {
     }
 
     this.votes.push(vote.id ? vote : { ...vote, id: randomUUID() });
+  }
+
+  async cancelMeeting(
+    ctx: TenantContext,
+    id: string,
+    reason?: string
+  ): Promise<Meeting> {
+    const meeting = this.meetings.find(
+      (m) => m.id === id && m.tenantId === ctx.tenantId
+    );
+
+    if (!meeting) {
+      throw new Error('Meeting not found for tenant');
+    }
+
+    meeting.status = 'cancelled';
+    meeting.cancelledAt = new Date();
+    meeting.cancelReason = reason;
+
+    return meeting;
+  }
+
+  async markNoticePosted(
+    ctx: TenantContext,
+    input: MarkNoticePostedInput
+  ): Promise<Meeting> {
+    const meeting = this.meetings.find(
+      (m) => m.id === input.meetingId && m.tenantId === ctx.tenantId
+    );
+
+    if (!meeting) {
+      throw new Error('Meeting not found for tenant');
+    }
+
+    meeting.status = 'noticed';
+    meeting.noticePostedAt = input.postedAt;
+    meeting.noticePosting = {
+      postedAt: input.postedAt,
+      postedByUserId: input.postedByUserId,
+      methods: input.methods,
+      locations: input.locations,
+      notes: input.notes,
+    };
+
+    return meeting;
   }
 }

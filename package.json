@@ -3,17 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "dev:api": "ts-node-dev --respawn --transpile-only src/http/server.ts",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "vitest run"
   },
   "dependencies": {
+    "express": "^4.21.0",
     "pg": "^8.16.3"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/geojson": "^7946.0.16",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.15.6",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^1.6.0"
   }
 }

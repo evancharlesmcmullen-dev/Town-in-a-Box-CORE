@@ -67,6 +67,14 @@ export interface FeeCalculationLine {
 }
 
 /**
+ * Input for calculating fees.
+ */
+export interface FeeCalculationInput {
+  feeScheduleId?: string;      // optional: use specific schedule
+  parameters: Record<string, number>;  // quantity/multiplier parameters keyed by fee item code
+}
+
+/**
  * Result of a fee calculation for a particular case/action.
  */
 export interface FeeCalculationResult {

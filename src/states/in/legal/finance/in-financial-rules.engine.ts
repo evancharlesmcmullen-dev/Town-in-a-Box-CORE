@@ -1,6 +1,6 @@
 // src/states/in/legal/finance/in-financial-rules.engine.ts
 
-import { JurisdictionProfile } from '../../../../core/tenancy/types';
+import { JurisdictionProfile } from '../../../../core/tenancy/tenancy.types';
 import {
   FinanceRuleSet,
   FundDefinition,

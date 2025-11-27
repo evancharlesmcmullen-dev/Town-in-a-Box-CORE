@@ -9,6 +9,7 @@ import {
   VoteRecord,
   MeetingType,
   MeetingStatus,
+  NoticePostingMethod,
 } from './meeting.types';
 
 // Input for scheduling a meeting.
@@ -26,6 +27,16 @@ export interface MeetingFilter {
   fromDate?: Date;
   toDate?: Date;
   status?: MeetingStatus;
+}
+
+// Input for marking a meeting notice as posted (Open Door compliance).
+export interface MarkNoticePostedInput {
+  meetingId: string;
+  postedAt: Date;
+  postedByUserId: string;
+  methods: NoticePostingMethod[];
+  locations?: string[];
+  notes?: string;
 }
 
 /**
@@ -79,9 +90,24 @@ export interface MeetingsService {
     vote: VoteRecord
   ): Promise<void>;
 
+  /**
+   * Cancel a meeting.
+   */
+  cancelMeeting(
+    ctx: TenantContext,
+    id: string,
+    reason?: string
+  ): Promise<Meeting>;
+
+  /**
+   * Mark that public notice has been posted for a meeting (Open Door compliance).
+   */
+  markNoticePosted(
+    ctx: TenantContext,
+    input: MarkNoticePostedInput
+  ): Promise<Meeting>;
+
   // Later we can add:
   // - attachAgenda(...)
   // - attachRecording(...)
-  // - cancelMeeting(...)
-  // - markNoticePosted(...)
 }

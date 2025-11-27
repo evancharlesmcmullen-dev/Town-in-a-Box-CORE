@@ -71,6 +71,35 @@ export interface VoteRecord {
 }
 
 /**
+ * Posting method used for meeting notice (Open Door compliance).
+ */
+export type NoticePostingMethod = 'physicalBoard' | 'website' | 'newspaper' | 'email' | 'other';
+
+/**
+ * Information about how/where notice was posted.
+ */
+export interface NoticePostingRecord {
+  postedAt: Date;
+  postedByUserId: string;
+  methods: NoticePostingMethod[];
+  locations?: string[];        // e.g. ["Town Hall Bulletin Board", "www.townoflapel.org"]
+  notes?: string;
+}
+
+/**
+ * A deadline extracted by AI from meeting packets.
+ */
+export interface MeetingDeadline {
+  id: string;
+  description: string;
+  dueDate: Date;
+  source: string;              // e.g. "Page 3 of agenda packet"
+  isConfirmed: boolean;        // staff-reviewed
+  reviewedAt?: Date;
+  reviewedByUserId?: string;
+}
+
+/**
  * A governing body's meeting (single date/time/session).
  */
 export interface Meeting {
@@ -88,8 +117,18 @@ export interface Meeting {
   createdByUserId?: string;
   createdAt: Date;
 
+  // Cancellation tracking
+  cancelledAt?: Date;
+  cancelReason?: string;
+
+  // Notice tracking (Open Door compliance)
   noticePostedAt?: Date;      // when notice was actually posted
   noticeId?: string;          // link into Notice engine later
+  noticePosting?: NoticePostingRecord;
+
+  // AI-generated fields
+  aiSummary?: string;         // council-friendly summary of agenda
+  aiDeadlines?: MeetingDeadline[];  // extracted deadlines from packet
 }
 
 /**
