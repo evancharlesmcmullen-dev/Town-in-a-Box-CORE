@@ -277,3 +277,112 @@ function getLastWeekdayOfMonth(
 
   return toIsoDateString(date);
 }
+
+// =============================================================================
+// APRA (Indiana Access to Public Records Act) Calendar Utilities
+// =============================================================================
+
+/**
+ * Options for APRA deadline calculations.
+ */
+export interface ApraCalendarOptions {
+  /**
+   * Legal holidays to exclude, as ISO date strings (YYYY-MM-DD).
+   * These are in addition to weekends (Saturdays and Sundays).
+   *
+   * @example ['2025-01-01', '2025-07-04', '2025-12-25']
+   */
+  holidays?: string[];
+}
+
+/**
+ * Compute the APRA statutory deadline for responding to a records request.
+ *
+ * Per IC 5-14-3-9(a), a public agency must respond to a request for
+ * records "within a reasonable time" but not later than 7 business days
+ * after the date the request is received.
+ *
+ * Business days exclude weekends (Saturday and Sunday) and Indiana
+ * state holidays.
+ *
+ * @param receivedAt - When the request was received
+ * @param opts - Optional configuration (holidays list)
+ * @returns The deadline date/time
+ *
+ * @example
+ * // Request received Monday Jan 6, 2025
+ * const received = new Date('2025-01-06T09:00:00');
+ * const deadline = computeApraDeadline(received);
+ * // Returns Jan 15, 2025 at 09:00:00 (7 business days later)
+ * // Skipping weekends and any holidays
+ */
+export function computeApraDeadline(
+  receivedAt: Date,
+  opts: ApraCalendarOptions = {}
+): Date {
+  const holidays = new Set(opts.holidays ?? []);
+
+  // Start from the day after receipt (the first business day counts)
+  let current = new Date(receivedAt);
+  let businessDaysRemaining = 7;
+
+  while (businessDaysRemaining > 0) {
+    // Move to next day
+    current = new Date(current.getTime() + 24 * 60 * 60 * 1000);
+
+    // Check if this is a business day
+    if (!isWeekendOrHoliday(current, holidays)) {
+      businessDaysRemaining--;
+    }
+  }
+
+  // Preserve the original time of day
+  current.setHours(
+    receivedAt.getHours(),
+    receivedAt.getMinutes(),
+    receivedAt.getSeconds(),
+    receivedAt.getMilliseconds()
+  );
+
+  return current;
+}
+
+/**
+ * Add N business days to a date.
+ *
+ * Business days exclude weekends and specified holidays.
+ *
+ * @param startDate - The starting date
+ * @param businessDays - Number of business days to add
+ * @param opts - Optional configuration (holidays list)
+ * @returns The resulting date
+ */
+export function addBusinessDays(
+  startDate: Date,
+  businessDays: number,
+  opts: ApraCalendarOptions = {}
+): Date {
+  const holidays = new Set(opts.holidays ?? []);
+  let current = new Date(startDate);
+  let daysRemaining = businessDays;
+
+  while (daysRemaining > 0) {
+    // Move to next day
+    current = new Date(current.getTime() + 24 * 60 * 60 * 1000);
+
+    // Check if this is a business day
+    if (!isWeekendOrHoliday(current, holidays)) {
+      daysRemaining--;
+    }
+  }
+
+  // Preserve the original time of day
+  current.setHours(
+    startDate.getHours(),
+    startDate.getMinutes(),
+    startDate.getSeconds(),
+    startDate.getMilliseconds()
+  );
+
+  return current;
+}

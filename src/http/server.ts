@@ -12,7 +12,9 @@ import {
   InMemoryMeetingsService,
   AiBootstrap,
 } from '../index';
+import { InMemoryApraService } from '../engines/records/in-memory-apra.service';
 import { createMeetingsRouter } from './routes/meetings.routes';
+import { createRecordsRouter } from './routes/records.routes';
 import { requestLogger, tenantContextMiddleware } from './middleware';
 import { errorHandler, notFoundHandler } from './errors';
 import { createAiRouter, AiClient, MockAiClient } from './ai.routes';
@@ -50,6 +52,9 @@ export async function createServer(config: Partial<ServerConfig> = {}): Promise<
   const baseMeetings = new InMemoryMeetingsService();
   const meetings = ai.aiMeetingsService(baseMeetings);
 
+  // Create APRA/records service
+  const records = new InMemoryApraService();
+
   // AI client (can be injected for testing)
   const aiClient = config.aiClient ?? new MockAiClient();
 
@@ -85,6 +90,7 @@ export async function createServer(config: Partial<ServerConfig> = {}): Promise<
       version: '0.1.0',
       endpoints: {
         meetings: '/api/meetings',
+        records: '/api/records',
         ai: '/api/ai',
         health: '/health',
       },
@@ -101,6 +107,9 @@ export async function createServer(config: Partial<ServerConfig> = {}): Promise<
 
   // Meetings routes
   app.use('/api/meetings', createMeetingsRouter(meetings));
+
+  // Records/APRA routes
+  app.use('/api/records', createRecordsRouter(records));
 
   // AI routes (standalone endpoints)
   const aiRouter = createAiRouter(baseMeetings, aiClient);
@@ -141,6 +150,7 @@ export async function startServer(
     console.log(`Health:    http://localhost:${port}/health`);
     console.log(`API Info:  http://localhost:${port}/api`);
     console.log(`Meetings:  http://localhost:${port}/api/meetings`);
+    console.log(`Records:   http://localhost:${port}/api/records`);
     console.log(`AI:        http://localhost:${port}/api/ai`);
     console.log('');
     console.log(`AI Provider: ${ai.config.provider}`);
