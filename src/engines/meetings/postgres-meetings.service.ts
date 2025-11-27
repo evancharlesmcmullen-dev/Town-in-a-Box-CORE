@@ -14,8 +14,7 @@ import {
   MeetingsService,
   ScheduleMeetingInput,
   MeetingFilter,
-  CancelMeetingInput,
-  NoticePostedResult,
+  MarkNoticePostedInput,
 } from './meetings.service';
 import {
   calculateNoticeDeadline,
@@ -186,17 +185,17 @@ export class PostgresMeetingsService implements MeetingsService {
 
   async cancelMeeting(
     ctx: TenantContext,
-    id: string,
-    input?: CancelMeetingInput
+    meetingId: string,
+    reason?: string
   ): Promise<Meeting> {
     return this.db.withTenant(ctx.tenantId, async (client) => {
       const existing = await client.query<MeetingRow>(
         `SELECT * FROM meetings WHERE tenant_id = $1 AND id = $2`,
-        [ctx.tenantId, id]
+        [ctx.tenantId, meetingId]
       );
 
       if (existing.rows.length === 0) {
-        throw new Error('Meeting not found');
+        throw new Error('Meeting not found for tenant');
       }
 
       const meeting = existing.rows[0];
@@ -221,7 +220,7 @@ export class PostgresMeetingsService implements MeetingsService {
         WHERE tenant_id = $1 AND id = $2
         RETURNING *
         `,
-        [ctx.tenantId, id, input?.reason ?? null]
+        [ctx.tenantId, meetingId, reason ?? null]
       );
 
       return this.rowToMeeting(result.rows[0]);
@@ -230,24 +229,22 @@ export class PostgresMeetingsService implements MeetingsService {
 
   async markNoticePosted(
     ctx: TenantContext,
-    id: string,
-    postedAt?: Date
-  ): Promise<NoticePostedResult> {
-    const now = postedAt ?? new Date();
+    input: MarkNoticePostedInput
+  ): Promise<Meeting> {
+    const { meetingId, postedAt } = input;
 
     return this.db.withTenant(ctx.tenantId, async (client) => {
       const existing = await client.query<MeetingRow>(
         `SELECT * FROM meetings WHERE tenant_id = $1 AND id = $2`,
-        [ctx.tenantId, id]
+        [ctx.tenantId, meetingId]
       );
 
       if (existing.rows.length === 0) {
-        throw new Error('Meeting not found');
+        throw new Error('Meeting not found for tenant');
       }
 
       const meeting = existing.rows[0];
-      const deadline = calculateNoticeDeadline(meeting.scheduled_start);
-      const compliant = isNoticeCompliant(now, meeting.scheduled_start);
+      const compliant = isNoticeCompliant(postedAt, meeting.scheduled_start);
 
       // Determine new status
       const newStatus = meeting.status === 'planned' ? 'noticed' : meeting.status;
@@ -263,14 +260,10 @@ export class PostgresMeetingsService implements MeetingsService {
         WHERE tenant_id = $1 AND id = $2
         RETURNING *
         `,
-        [ctx.tenantId, id, newStatus, now]
+        [ctx.tenantId, meetingId, newStatus, postedAt]
       );
 
-      return {
-        meeting: this.rowToMeeting(result.rows[0]),
-        isCompliant: compliant,
-        deadline,
-      };
+      return this.rowToMeeting(result.rows[0]);
     });
   }
 

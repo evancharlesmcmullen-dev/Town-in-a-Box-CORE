@@ -9,18 +9,18 @@ import {
   VoteRecord,
   MeetingType,
   MeetingStatus,
+  MeetingNotice,
 } from './meeting.types';
 import {
   MeetingsService,
   ScheduleMeetingInput,
   MeetingFilter,
-  CancelMeetingInput,
-  NoticePostedResult,
+  MarkNoticePostedInput,
 } from './meetings.service';
 import {
-  calculateNoticeDeadline,
-  isNoticeCompliant,
-} from '../../core/calendar/indiana-business-calendar';
+  checkOpenDoorCompliance,
+  getIndianaStateHolidays,
+} from '../../core/calendar/open-door.calendar';
 
 export interface InMemoryMeetingsSeedData {
   meetings?: Meeting[];
@@ -157,68 +157,153 @@ export class InMemoryMeetingsService implements MeetingsService {
 
   async cancelMeeting(
     ctx: TenantContext,
-    id: string,
-    input?: CancelMeetingInput
+    meetingId: string,
+    reason?: string
   ): Promise<Meeting> {
     const meeting = this.meetings.find(
-      (m) => m.id === id && m.tenantId === ctx.tenantId
+      (m) => m.id === meetingId && m.tenantId === ctx.tenantId
     );
 
     if (!meeting) {
-      throw new Error('Meeting not found');
+      throw new Error('Meeting not found for tenant');
     }
 
-    // Idempotent: already cancelled
-    if (meeting.status === 'cancelled') {
-      return meeting;
-    }
-
-    // Cannot cancel adjourned meeting
+    // Check terminal states first
     if (meeting.status === 'adjourned') {
       throw new Error('Cannot cancel an adjourned meeting');
     }
 
-    // Update meeting in place
+    // Idempotent: if already cancelled, return as-is
+    if (meeting.status === 'cancelled') {
+      return meeting;
+    }
+
+    // Note: If meeting.status is 'inSession', this is a retroactive cancellation.
+    // The audit trail (cancelledAt timestamp) will reflect when the cancellation
+    // was recorded, not when the meeting was supposed to occur.
     meeting.status = 'cancelled';
     meeting.cancelledAt = new Date();
-    meeting.cancellationReason = input?.reason;
+    meeting.cancelledByUserId = ctx.userId;
+    meeting.cancellationReason = reason ?? undefined;
 
     return meeting;
   }
 
   async markNoticePosted(
     ctx: TenantContext,
-    id: string,
-    postedAt?: Date
-  ): Promise<NoticePostedResult> {
-    const now = postedAt ?? new Date();
-
+    input: MarkNoticePostedInput
+  ): Promise<Meeting> {
     const meeting = this.meetings.find(
-      (m) => m.id === id && m.tenantId === ctx.tenantId
+      (m) => m.id === input.meetingId && m.tenantId === ctx.tenantId
     );
 
     if (!meeting) {
-      throw new Error('Meeting not found');
+      throw new Error('Meeting not found for tenant');
     }
 
-    const deadline = calculateNoticeDeadline(meeting.scheduledStart);
-    const compliant = isNoticeCompliant(now, meeting.scheduledStart);
+    if (meeting.status === 'cancelled') {
+      throw new Error('Cannot post notice for a cancelled meeting');
+    }
 
-    // Update status to 'noticed' if currently 'planned'
+    if (meeting.status === 'adjourned') {
+      throw new Error('Cannot post notice for an adjourned meeting');
+    }
+
+    // Calculate compliance per Indiana Open Door Law (IC 5-14-1.5-5)
+    // "at least 48 hours (excluding Saturdays, Sundays, and legal holidays)"
+    let requiredPostedBy: Date;
+    let isTimely: boolean;
+    let businessHoursLead: number;
+
+    if (meeting.type === 'emergency') {
+      // Emergency meetings: IC 5-14-1.5-5(d) exempts from 48-hour rule
+      // Notice should be posted "as soon as possible"
+      requiredPostedBy = meeting.scheduledStart;
+      isTimely = true;
+      businessHoursLead = 0;
+    } else {
+      // Get Indiana state holidays for the relevant year(s)
+      const meetingYear = meeting.scheduledStart.getFullYear();
+      const postedYear = input.postedAt.getFullYear();
+      const holidays = [
+        ...getIndianaStateHolidays(meetingYear),
+        ...(postedYear !== meetingYear ? getIndianaStateHolidays(postedYear) : []),
+      ];
+
+      // Check compliance using business hours calculation
+      const compliance = checkOpenDoorCompliance(
+        meeting.scheduledStart,
+        input.postedAt,
+        { holidays }
+      );
+
+      requiredPostedBy = compliance.requiredPostedBy;
+      isTimely = compliance.isTimely;
+      businessHoursLead = compliance.businessHoursLead;
+    }
+
+    // Legacy field for backward compatibility (simple calendar hours)
+    const requiredLeadTimeHours = input.requiredLeadTimeHours ?? 48;
+
+    const notice: MeetingNotice = {
+      id: randomUUID(),
+      meetingId: meeting.id,
+      postedAt: input.postedAt,
+      postedByUserId: input.postedByUserId,
+      methods: input.methods,
+      locations: input.locations,
+      proofUris: input.proofUris,
+      requiredLeadTimeHours,
+      isTimely,
+      notes: input.notes,
+    };
+
+    // Append to notices array
+    meeting.notices = [...(meeting.notices ?? []), notice];
+    meeting.lastNoticePostedAt = input.postedAt;
+
+    // Set first notice timestamp if not already set
+    if (!meeting.noticePostedAt) {
+      meeting.noticePostedAt = input.postedAt;
+    }
+
+    // Update compliance tracking with enriched structure
+    meeting.openDoorCompliance = {
+      timeliness: isTimely ? 'COMPLIANT' : 'LATE',
+      requiredPostedBy: requiredPostedBy.toISOString(),
+      actualPostedAt: input.postedAt.toISOString(),
+      notes: meeting.type === 'emergency'
+        ? 'Emergency meeting - notice posted as soon as possible per IC 5-14-1.5-5(d)'
+        : `${businessHoursLead} business hours lead time (48 required)`,
+      lastCheckedAt: new Date(),
+    };
+
+    // Transition status to 'noticed' if currently 'planned'
     if (meeting.status === 'planned') {
       meeting.status = 'noticed';
     }
 
-    // Set notice timestamps
-    if (!meeting.noticePostedAt) {
-      meeting.noticePostedAt = now;
-    }
-    meeting.lastNoticePostedAt = now;
+    return meeting;
+  }
 
-    return {
-      meeting,
-      isCompliant: compliant,
-      deadline,
-    };
+  /**
+   * Update a meeting's AI summary. Used by AI routes.
+   */
+  async updateAiSummary(
+    ctx: TenantContext,
+    meetingId: string,
+    summary: string
+  ): Promise<Meeting> {
+    const meeting = this.meetings.find(
+      (m) => m.id === meetingId && m.tenantId === ctx.tenantId
+    );
+
+    if (!meeting) {
+      throw new Error('Meeting not found for tenant');
+    }
+
+    meeting.aiCouncilSummary = summary;
+    meeting.aiSummaryGeneratedAt = new Date().toISOString();
+    return meeting;
   }
 }

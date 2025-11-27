@@ -1,47 +1,174 @@
-import { INLegalEngine } from './states/in/legal/in-legal-engine';
-import {
+// src/index.ts
+//
+// Public API exports for Town-in-a-Box-CORE.
+//
+// This is the official entry point for external code (CLI, API, UI).
+// Everything else is internal and may change without notice.
+
+// =============================================================================
+// CORE: TENANCY
+// =============================================================================
+
+export type {
+  StateCode,
+  LocalGovKind,
   JurisdictionProfile,
   TenantContext,
+  Tenant,
+  DataStoreVendor,
+  DataStoreConfig,
+  TenantConfig,
 } from './core/tenancy/tenancy.types';
-import { InMemoryApraService } from './engines/records/in-memory-apra.service';
-import { ApraService } from './engines/records/apra.service';
 
-async function main() {
-  // Set up jurisdiction + tenant context for Town of Lapel
-  const jurisdiction: JurisdictionProfile = {
-    tenantId: 'lapel-in',
-    state: 'IN',
-    kind: 'town',
-    name: 'Town of Lapel',
-    authorityTags: ['zoningAuthority', 'utilityOperator'],
-  };
+// =============================================================================
+// CORE: AI LAYER
+// =============================================================================
 
-  const ctx: TenantContext = {
-    tenantId: 'lapel-in',
-    jurisdiction,
-  };
+// Service interfaces
+export type {
+  AiCoreService,
+  AiExtractionService,
+  AiMessageRole,
+  AiMessage,
+  AiToolDefinition,
+  AiToolCall,
+  AiChatOptions,
+  AiChatResponse,
+  AiCompleteOptions,
+  ExtractedDeadline,
+  MatterClassification,
+} from './core/ai/ai.service';
 
-  const legal = new INLegalEngine();
-  const apraService: ApraService = new InMemoryApraService();
+// Provider abstraction
+export type { AiProviderClient, AiProviderConfig, AiErrorCode } from './core/ai/ai.provider';
+export { AiError } from './core/ai/ai.provider';
 
-  console.log('APRA rules for', jurisdiction.name);
-  console.log(legal.getApraRules(jurisdiction));
+// Bootstrap and config
+export type { AiBootstrap } from './core/ai/ai.bootstrap';
+export { createAiBootstrap, createAiBootstrapWithConfig } from './core/ai/ai.bootstrap';
+export type { AiProviderName, AiRuntimeConfig } from './core/ai/ai.config';
+export { loadAiConfig } from './core/ai/ai.config';
 
-  // Create a sample APRA request
-  const created = await apraService.createRequest(ctx, {
-    requesterName: 'Jane Doe',
-    requesterEmail: 'jane@example.com',
-    requestText: 'All ordinances passed in 2024.',
-  });
+// Mock client for testing
+export { MockAiClient } from './core/ai/mock-ai.client';
 
-  console.log('Created APRA request:', created);
+// =============================================================================
+// ENGINE: MEETINGS
+// =============================================================================
 
-  // List all APRA requests for this tenant
-  const list = await apraService.listRequests(ctx, {});
-  console.log('All APRA requests for tenant:', list);
-}
+// Service interfaces
+export type {
+  MeetingsService,
+  AiMeetingsService,
+  ScheduleMeetingInput,
+  MeetingFilter,
+  MarkNoticePostedInput,
+} from './engines/meetings/meetings.service';
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Types
+export type {
+  GoverningBody,
+  MeetingType,
+  MeetingStatus,
+  AgendaItem,
+  Minutes,
+  VoteValue,
+  VoteRecord,
+  NoticeMethod,
+  MeetingNotice,
+  OpenDoorTimeliness,
+  OpenDoorCompliance,
+  Meeting,
+  MeetingDeadline,
+  MeetingSummary,
+} from './engines/meetings/meeting.types';
+
+// Implementations
+export { InMemoryMeetingsService } from './engines/meetings/in-memory-meetings.service';
+export type { InMemoryMeetingsSeedData } from './engines/meetings/in-memory-meetings.service';
+export { AiMeetingsServiceImpl } from './engines/meetings/ai-meetings.service.impl';
+
+// Calendar utilities (for custom compliance checks)
+export {
+  computeRequiredPostedBy,
+  checkOpenDoorCompliance,
+  countBusinessHours,
+  getIndianaStateHolidays,
+} from './core/calendar/open-door.calendar';
+export type {
+  OpenDoorCalendarOptions,
+  OpenDoorComplianceResult,
+} from './core/calendar/open-door.calendar';
+
+// =============================================================================
+// ENGINE: FEES
+// =============================================================================
+
+// Service interface
+export type { FeeService } from './engines/fees/fee.service';
+
+// Types
+export type {
+  FeeCategory,
+  FeeItem,
+  FeeSchedule,
+  FeeCalculationParameter,
+  FeeCalculationContext,
+  FeeCalculationInput,
+  FeeCalculationLine,
+  FeeDiscountLine,
+  FeeCalculationResult,
+} from './engines/fees/fee.types';
+
+// Implementation
+export { InMemoryFeeService } from './engines/fees/in-memory-fee.service';
+export type { InMemoryFeeSeedData } from './engines/fees/in-memory-fee.service';
+
+// =============================================================================
+// ENGINE: TOWNSHIP ASSISTANCE
+// =============================================================================
+
+// Service interface
+export type { TownshipAssistanceService } from './engines/township-assistance/assistance.service';
+
+// Core types
+export type {
+  AssistanceCaseStatus,
+  AssistanceBenefitType,
+  AssistanceProgramPolicy,
+  HouseholdMember,
+  AssistanceApplication,
+  AssistanceCase,
+  AssistanceBenefit,
+  AssistanceCaseSummary,
+} from './engines/township-assistance/assistance.types';
+
+// Reporting types
+export type {
+  AssistanceStatsRange,
+  AssistanceCaseStats,
+  AssistanceBenefitBreakdown,
+  HouseholdSizeBucketStats,
+  AssistanceStatsSummary,
+  AssistanceStatsSummaryLite,
+} from './engines/township-assistance/assistance.reporting.types';
+
+// Reporting service
+export type { TownshipAssistanceReportingService } from './engines/township-assistance/assistance.reporting.service';
+export { InMemoryAssistanceReportingService } from './engines/township-assistance/in-memory-assistance.reporting.service';
+
+// =============================================================================
+// ENGINE: RECORDS (APRA)
+// =============================================================================
+
+// Service interface
+export type { ApraService } from './engines/records/apra.service';
+
+// Implementation
+export { InMemoryApraService } from './engines/records/in-memory-apra.service';
+
+// =============================================================================
+// LEGAL ENGINE (Indiana)
+// =============================================================================
+
+export { INLegalEngine } from './states/in/legal/in-legal-engine';

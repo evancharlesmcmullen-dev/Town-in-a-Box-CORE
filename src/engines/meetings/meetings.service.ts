@@ -9,6 +9,8 @@ import {
   VoteRecord,
   MeetingType,
   MeetingStatus,
+  NoticeMethod,
+  MeetingDeadline,
 } from './meeting.types';
 
 // Input for scheduling a meeting.
@@ -38,6 +40,19 @@ export interface NoticePostedResult {
   meeting: Meeting;
   isCompliant: boolean;
   deadline: Date;
+}
+
+// Input for marking notice as posted (Open Door Law compliance).
+export interface MarkNoticePostedInput {
+  meetingId: string;
+  postedAt: Date;
+  postedByUserId: string;
+  methods: NoticeMethod[];
+  locations: string[];
+  proofUris?: string[];
+  notes?: string;
+  // Override for emergencies or special cases (default is 48 hours)
+  requiredLeadTimeHours?: number;
 }
 
 /**
@@ -95,28 +110,82 @@ export interface MeetingsService {
    * Cancel a scheduled meeting.
    * - Idempotent: returns the meeting unchanged if already cancelled.
    * - Throws if meeting is adjourned (cannot cancel a completed meeting).
+   * @param reason Optional reason for the cancellation.
    */
   cancelMeeting(
     ctx: TenantContext,
-    id: string,
-    input?: CancelMeetingInput
+    meetingId: string,
+    reason?: string
   ): Promise<Meeting>;
 
   /**
-   * Mark that Open Door notice has been posted for a meeting.
-   * Updates status to 'noticed' if currently 'planned'.
-   * Validates 48 business hour compliance (IC 5-14-1.5-5).
+   * Record that public notice has been posted for a meeting.
    *
-   * @param postedAt - When the notice was posted (defaults to now)
-   * @returns The updated meeting and compliance info
+   * Evaluates Open Door Law compliance per IC 5-14-1.5-5:
+   * - Regular meetings require 48 business hours notice (excluding
+   *   Saturdays, Sundays, and Indiana state holidays)
+   * - Emergency meetings are exempt from the 48-hour requirement
    */
   markNoticePosted(
     ctx: TenantContext,
-    id: string,
-    postedAt?: Date
-  ): Promise<NoticePostedResult>;
+    input: MarkNoticePostedInput
+  ): Promise<Meeting>;
 
-  // Future additions:
+  /**
+   * Update a meeting's AI summary. Used by AI routes.
+   */
+  updateAiSummary?(
+    ctx: TenantContext,
+    meetingId: string,
+    summary: string
+  ): Promise<Meeting>;
+
+  // Later we can add:
   // - attachAgenda(...)
   // - attachRecording(...)
+}
+
+/**
+ * AI-enhanced meetings service interface.
+ *
+ * Extends base MeetingsService with AI-powered features.
+ * Implementations require an AiExtractionService dependency.
+ */
+export interface AiMeetingsService extends MeetingsService {
+  /**
+   * Generate an AI summary of the meeting for council/board packets.
+   *
+   * @param agendaText - The agenda/packet text to summarize
+   * @returns The updated meeting with aiCouncilSummary populated
+   */
+  generateCouncilSummary(
+    ctx: TenantContext,
+    meetingId: string,
+    agendaText: string
+  ): Promise<Meeting>;
+
+  /**
+   * Scan meeting materials for deadlines using AI.
+   *
+   * Extracted deadlines are stored on the meeting with isConfirmed=false,
+   * requiring human review before being treated as authoritative.
+   *
+   * @param packetText - Meeting packet/agenda text to scan
+   * @returns The updated meeting with aiExtractedDeadlines populated
+   */
+  scanForDeadlines(
+    ctx: TenantContext,
+    meetingId: string,
+    packetText: string
+  ): Promise<Meeting>;
+
+  /**
+   * Confirm or reject an AI-extracted deadline after human review.
+   */
+  reviewDeadline(
+    ctx: TenantContext,
+    meetingId: string,
+    deadlineId: string,
+    isConfirmed: boolean
+  ): Promise<Meeting>;
 }
