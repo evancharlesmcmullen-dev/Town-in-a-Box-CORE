@@ -6,25 +6,164 @@ import { DomainConfig, StatutoryCitation } from '../../../core/state';
  * Indiana Meetings Configuration
  *
  * Configuration for Open Door Law compliance per IC 5-14-1.5.
+ * This config is derived from tenant identity + state rules via InMeetingsPack.
  */
 export interface INMeetingsConfig extends DomainConfig {
   domain: 'meetings';
 
-  // Default posting locations for notices
+  // ==========================================================================
+  // Notice Lead Times (per IC 5-14-1.5-5)
+  // ==========================================================================
+
+  /**
+   * Hours of advance notice required for regular meetings.
+   * Indiana Open Door Law: 48 hours for most governing bodies.
+   */
+  regularMeetingNoticeHours: number;
+
+  /**
+   * Hours of advance notice required for special meetings.
+   * Typically same as regular meetings per IC 5-14-1.5-5.
+   */
+  specialMeetingNoticeHours: number;
+
+  /**
+   * Hours of advance notice required for emergency meetings.
+   * Emergency meetings have reduced/no notice requirements per IC 5-14-1.5-5(d).
+   */
+  emergencyMeetingNoticeHours: number;
+
+  // ==========================================================================
+  // Default Meeting Patterns
+  // ==========================================================================
+
+  /**
+   * Default day of week for regular meetings (0=Sunday through 6=Saturday).
+   * E.g., 1 for Monday, 2 for Tuesday.
+   */
+  defaultRegularMeetingDay?: number;
+
+  /**
+   * Default time for regular meetings in 24-hour format (e.g., "18:30").
+   */
+  defaultRegularMeetingTime?: string;
+
+  /**
+   * Whether this governing body supports remote/virtual participation.
+   * Future-proofing for post-pandemic meeting flexibility.
+   */
+  supportsRemoteParticipation?: boolean;
+
+  // ==========================================================================
+  // Governing Body Types and Open Door Applicability
+  // ==========================================================================
+
+  /**
+   * Types of governing bodies subject to Open Door Law.
+   * Common Indiana types: COUNCIL, BOARD, COMMISSION, BZA, PLAN_COMMISSION, REDEVELOPMENT
+   */
+  governingBodyTypes: GoverningBodyType[];
+
+  /**
+   * Whether agendas must be posted per IC 5-14-1.5-4.
+   */
+  requiresAgendaPosting: boolean;
+
+  /**
+   * Whether minutes are required per IC 5-14-1.5-4.
+   */
+  requiresMinutes: boolean;
+
+  // ==========================================================================
+  // Public Notice Channels
+  // ==========================================================================
+
+  /**
+   * Channels through which meeting notices must be published.
+   */
+  noticeChannels: NoticeChannel[];
+
+  /**
+   * Default posting locations for notices.
+   */
   defaultPostingLocations: PostingLocation[];
 
-  // Whether electronic posting is enabled
+  /**
+   * Whether electronic posting is enabled.
+   */
   electronicPostingEnabled: boolean;
 
-  // Allowed executive session topics
-  allowedExecSessionTopics: ExecSessionTopic[];
+  // ==========================================================================
+  // Records / Retention
+  // ==========================================================================
 
-  // Meeting minutes requirements
+  /**
+   * How many years meeting minutes must be retained.
+   */
+  minutesRetentionYears?: number;
+
+  /**
+   * How many days meeting recordings must be retained.
+   */
+  recordingRetentionDays?: number;
+
+  /**
+   * Detailed minutes requirements.
+   */
   minutesRequirements: MinutesRequirements;
 
-  // Quorum rules
+  // ==========================================================================
+  // Executive Sessions (IC 5-14-1.5-6.1)
+  // ==========================================================================
+
+  /**
+   * Allowed executive session topics per IC 5-14-1.5-6.1.
+   */
+  allowedExecSessionTopics: ExecSessionTopic[];
+
+  // ==========================================================================
+  // Quorum Rules
+  // ==========================================================================
+
+  /**
+   * Quorum rules for meetings.
+   */
   quorumRules: QuorumRules;
+
+  // ==========================================================================
+  // Extension Support
+  // ==========================================================================
+
+  /**
+   * Allow extension for future fields.
+   */
+  [key: string]: unknown;
 }
+
+/**
+ * Type of governing body subject to Open Door Law.
+ */
+export type GoverningBodyType =
+  | 'COUNCIL'
+  | 'BOARD'
+  | 'COMMISSION'
+  | 'BZA'
+  | 'PLAN_COMMISSION'
+  | 'REDEVELOPMENT'
+  | 'PARKS_BOARD'
+  | 'UTILITY_BOARD'
+  | string; // Allow custom types
+
+/**
+ * Channel for publishing meeting notices.
+ */
+export type NoticeChannel =
+  | 'website'
+  | 'physicalPosting'
+  | 'newspaper'
+  | 'email'
+  | 'socialMedia'
+  | string; // Allow custom channels
 
 /**
  * A location where meeting notices are posted.
@@ -48,7 +187,7 @@ export interface ExecSessionTopic {
 }
 
 /**
- * Minutes requirements.
+ * Minutes requirements per IC 5-14-1.5-4.
  */
 export interface MinutesRequirements {
   requiresMemoranda: boolean;
@@ -68,22 +207,51 @@ export interface QuorumRules {
 
 /**
  * Default Indiana meetings configuration.
+ * This provides baseline values that InMeetingsPack.getDefaultConfig() may override.
  */
 export const DEFAULT_IN_MEETINGS_CONFIG: INMeetingsConfig = {
   domain: 'meetings',
   enabled: true,
 
+  // Notice lead times per IC 5-14-1.5-5
+  regularMeetingNoticeHours: 48,
+  specialMeetingNoticeHours: 48,
+  emergencyMeetingNoticeHours: 0, // Emergency meetings have no notice requirement
+
+  // Default meeting patterns - typically set per entity
+  defaultRegularMeetingDay: undefined,
+  defaultRegularMeetingTime: undefined,
+  supportsRemoteParticipation: false,
+
+  // Governing bodies - baseline for all Indiana entities
+  governingBodyTypes: ['COUNCIL', 'BOARD'],
+  requiresAgendaPosting: true,
+  requiresMinutes: true,
+
+  // Notice channels
+  noticeChannels: ['website', 'physicalPosting'],
   defaultPostingLocations: [
     {
-      id: 'town-hall',
-      name: 'Town Hall Bulletin Board',
+      id: 'municipal-building',
+      name: 'Municipal Building Bulletin Board',
       type: 'physical',
       isPrimary: true,
     },
   ],
-
   electronicPostingEnabled: true,
 
+  // Retention defaults (based on Indiana records retention schedules)
+  minutesRetentionYears: 10,
+  recordingRetentionDays: 90,
+
+  minutesRequirements: {
+    requiresMemoranda: true,
+    retentionYears: 10,
+    mustRecordVotes: true,
+    mustRecordAbsences: true,
+  },
+
+  // Executive session topics per IC 5-14-1.5-6.1
   allowedExecSessionTopics: [
     {
       code: 'PERSONNEL',
@@ -117,13 +285,7 @@ export const DEFAULT_IN_MEETINGS_CONFIG: INMeetingsConfig = {
     },
   ],
 
-  minutesRequirements: {
-    requiresMemoranda: true,
-    retentionYears: 10,
-    mustRecordVotes: true,
-    mustRecordAbsences: true,
-  },
-
+  // Quorum rules
   quorumRules: {
     minimumForQuorum: 'majority',
     countsAbsentees: false,

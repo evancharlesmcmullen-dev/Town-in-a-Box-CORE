@@ -26,13 +26,15 @@ import {
   TenantIdentity,
 } from '../state';
 
-// Import the Indiana finance pack to ensure it's registered
-// This import has a side effect: it calls registerDomainPack(InFinancePack)
+// Import state packs to ensure they're registered
+// These imports have side effects: they call registerDomainPack()
 // In production, you'd have a bootstrap file that imports all state packs
 import '../../states/in/finance';
+import '../../states/in/meetings';
 
 // Re-export for convenience (optional - types only)
 import type { INFinanceConfig } from '../../states/in/finance/in-finance.config';
+import type { INMeetingsConfig } from '../../states/in/meetings/in-meetings.config';
 
 /**
  * Example: Get finance configuration for any Indiana tenant.
@@ -79,6 +81,55 @@ export function getFinanceConfigWithMetadata(
     tenantConfig,
     tenantIdentity,
     'finance'
+  );
+}
+
+/**
+ * Example: Get meetings configuration for any Indiana tenant.
+ *
+ * This function demonstrates the generic pattern for the meetings domain.
+ * The tenant's identity determines the computed defaults (governing body types,
+ * notice channels, etc. based on entity class and population).
+ *
+ * @param tenantConfig - The tenant's full configuration (StateTenantConfig)
+ * @param tenantIdentity - The tenant's identity (TenantIdentity)
+ * @returns The resolved meetings config, or undefined if not available
+ *
+ * @example
+ * ```typescript
+ * // For any Indiana tenant:
+ * const meetingsConfig = getMeetingsConfig(someTenantConfig, someTenantIdentity);
+ *
+ * if (meetingsConfig) {
+ *   // Config is computed based on tenant's identity (entity class, population, etc.)
+ *   console.log('Notice hours:', meetingsConfig.regularMeetingNoticeHours);
+ *   console.log('Governing bodies:', meetingsConfig.governingBodyTypes);
+ *   console.log('Requires minutes:', meetingsConfig.requiresMinutes);
+ * }
+ * ```
+ */
+export function getMeetingsConfig(
+  tenantConfig: StateTenantConfig,
+  tenantIdentity: TenantIdentity
+): INMeetingsConfig | undefined {
+  // Use the generic resolver - it finds the right pack based on state + domain
+  return buildDomainConfig<INMeetingsConfig>(tenantConfig, tenantIdentity, 'meetings');
+}
+
+/**
+ * Example: Get meetings configuration with metadata.
+ *
+ * Returns additional metadata about the resolution process.
+ * Useful for debugging and admin UIs.
+ */
+export function getMeetingsConfigWithMetadata(
+  tenantConfig: StateTenantConfig,
+  tenantIdentity: TenantIdentity
+) {
+  return buildDomainConfigWithMetadata<INMeetingsConfig>(
+    tenantConfig,
+    tenantIdentity,
+    'meetings'
   );
 }
 
@@ -184,5 +235,66 @@ export function checkDomainAvailable(
  * const largerConfig = getFinanceConfig(largerTownConfig, largerTownIdentity);
  * // largerConfig.canLevyOwnLIT === true  (population >= 3,501)
  * // largerConfig.usesCountyLIT === false
+ * ```
+ */
+
+/**
+ * Example showing how any tenant's meetings config is resolved:
+ *
+ * ```typescript
+ * import { StateTenantConfig, TenantIdentity } from '../state';
+ * import { getMeetingsConfig } from './domain-config.service';
+ *
+ * // Any Indiana tenant (small town example)
+ * const townIdentity: TenantIdentity = {
+ *   tenantId: 'example-town',
+ *   displayName: 'Example Town',
+ *   state: 'IN',
+ *   entityClass: 'TOWN',
+ *   population: 2350,
+ *   countyName: 'Example County',
+ * };
+ *
+ * const townConfig: StateTenantConfig = {
+ *   tenantId: 'example-town',
+ *   name: 'Example Town',
+ *   state: 'IN',
+ *   jurisdiction: { ... },
+ *   dataStore: { vendor: 'memory', databaseName: 'example_town' },
+ *   enabledModules: [
+ *     { moduleId: 'meetings', enabled: true, config: { defaultRegularMeetingDay: 2 } },
+ *   ],
+ * };
+ *
+ * const meetingsConfig = getMeetingsConfig(townConfig, townIdentity);
+ *
+ * // Result:
+ * // {
+ * //   domain: 'meetings',
+ * //   enabled: true,
+ * //   regularMeetingNoticeHours: 48,           // <-- Indiana Open Door baseline
+ * //   specialMeetingNoticeHours: 48,
+ * //   emergencyMeetingNoticeHours: 0,          // <-- Emergency has no advance notice
+ * //   governingBodyTypes: ['COUNCIL', 'BOARD', 'PLAN_COMMISSION'],  // <-- Computed for TOWN
+ * //   requiresAgendaPosting: true,
+ * //   requiresMinutes: true,
+ * //   noticeChannels: ['website', 'physicalPosting'],  // <-- Smaller town, no newspaper
+ * //   defaultRegularMeetingDay: 2,              // <-- From tenant override (Tuesday)
+ * //   minutesRetentionYears: 10,
+ * //   ...
+ * // }
+ *
+ * // A city (entityClass: 'CITY') would get different computed values:
+ * const cityIdentity: TenantIdentity = {
+ *   ...townIdentity,
+ *   tenantId: 'example-city',
+ *   displayName: 'Example City',
+ *   entityClass: 'CITY',
+ *   population: 15000,
+ * };
+ *
+ * const cityConfig = getMeetingsConfig(cityTenantConfig, cityIdentity);
+ * // cityConfig.governingBodyTypes includes BZA, REDEVELOPMENT, PARKS_BOARD
+ * // cityConfig.noticeChannels includes 'newspaper' (larger entity)
  * ```
  */
