@@ -4,6 +4,20 @@
 // These constants encode legal requirements from Indiana Code.
 
 /**
+ * Indiana timezone constants.
+ * Most of Indiana observes Eastern Time, but some northwest and southwest
+ * counties observe Central Time. Default to Eastern (Indianapolis).
+ */
+export const INDIANA_TIMEZONES = {
+  /** Eastern Time (majority of state, including Indianapolis). */
+  eastern: 'America/Indiana/Indianapolis',
+  /** Central Time (northwest and southwest counties). */
+  central: 'America/Chicago',
+  /** Default timezone for Indiana municipalities. */
+  default: 'America/Indiana/Indianapolis',
+} as const;
+
+/**
  * Indiana Open Door Law requirements (IC 5-14-1.5).
  */
 export const INDIANA_OPEN_DOOR = {
@@ -21,6 +35,9 @@ export const INDIANA_OPEN_DOOR = {
 
   /** Statute reference for minutes requirements. */
   minutesCite: 'IC 5-14-1.5-4',
+
+  /** Default timezone for notice calculations. */
+  defaultTimezone: INDIANA_TIMEZONES.default,
 } as const;
 
 /**

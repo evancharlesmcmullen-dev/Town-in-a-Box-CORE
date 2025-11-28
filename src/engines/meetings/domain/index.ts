@@ -10,6 +10,7 @@ export * from './state-machines';
 
 // Constants
 export * from './constants/indiana.constants';
+export * from './constants/audit-actions';
 
 // Services
 export * from './services/compliance.service';

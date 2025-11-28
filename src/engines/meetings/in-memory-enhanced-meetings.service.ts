@@ -355,6 +355,27 @@ export class InMemoryEnhancedMeetingsService implements EnhancedMeetingsService 
 
     validateMeetingTransition(meeting.status, 'ADJOURNED');
 
+    // CRITICAL: Cannot adjourn if any executive session is pending certification
+    // IC 5-14-1.5-6.1 requires certification before meeting can properly conclude
+    const execSessions = await this.getExecSessions(ctx, meetingId);
+    const uncertified = execSessions.filter(
+      (es) => es.status === 'ENDED' || es.status === 'IN_SESSION'
+    );
+    if (uncertified.length > 0) {
+      throw new ComplianceError(
+        MEETINGS_ERROR_CODES.EXEC_SESSION_UNCERTIFIED,
+        'IC 5-14-1.5-6.1',
+        {
+          message: 'Cannot adjourn meeting with uncertified executive sessions',
+          uncertifiedSessions: uncertified.map((es) => ({
+            id: es.id,
+            status: es.status,
+            basisCode: es.basisCode,
+          })),
+        }
+      );
+    }
+
     meeting.status = 'ADJOURNED';
     meeting.actualEnd = new Date();
     meeting.adjournedAt = new Date();
