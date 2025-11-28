@@ -27,6 +27,36 @@ import {
   getIndianaStateHolidays,
 } from '../../core/calendar/open-door.calendar';
 
+// =============================================================================
+// APRA Workflow Integration (v1)
+// =============================================================================
+//
+// The following imports provide access to the APRA workflow state machine.
+// These can be used to manage request workflows with proper status validation
+// and deadline tracking.
+//
+// TODO: In a future version, integrate workflow context into the service:
+// 1. Store ApraRequestWorkflowContext alongside each request
+// 2. Use transitionApraStatus() to validate status changes
+// 3. Use resetApraDeadline() when clarification is received
+// 4. Persist workflow context to database
+//
+// For now, the existing status tracking remains unchanged to avoid breaking
+// the current API. The workflow types/services are available for use in
+// new features or gradual migration.
+//
+import {
+  ApraRequestWorkflowContext,
+  ApraRequestStatus as WorkflowStatus,
+} from '../../core/records/apra-workflow.types';
+import {
+  initializeApraWorkflow,
+  transitionApraStatus,
+  isValidTransition,
+  getValidNextStatuses,
+} from '../../core/records/apra-workflow.service';
+import { calculateApraDeadlines } from '../../core/records/apra-deadlines.service';
+
 /**
  * Seed data for initializing the in-memory service.
  */
@@ -506,5 +536,91 @@ export class InMemoryApraService implements ApraService {
     }
 
     return this.fulfillments.filter((f) => f.requestId === requestId);
+  }
+
+  // ===========================================================================
+  // WORKFLOW INTEGRATION HELPERS (v1)
+  // ===========================================================================
+  //
+  // These methods demonstrate how to integrate the new APRA workflow engine.
+  // They are provided as examples and for gradual adoption.
+
+  /**
+   * Create a workflow context for a request.
+   *
+   * This creates a workflow context that can be used for status validation
+   * and deadline tracking. The context is independent of the stored request
+   * and must be persisted separately if needed.
+   *
+   * @param request - The APRA request to create a workflow for
+   * @param config - APRA configuration (from INApraConfig)
+   * @returns Workflow context
+   *
+   * @example
+   * ```typescript
+   * const request = await service.getRequest(ctx, requestId);
+   * const config = getApraConfig(tenantConfig, tenantIdentity);
+   * const workflow = service.createWorkflowContext(request, config);
+   *
+   * // Check if transition is valid before attempting
+   * const canTransition = isValidTransition(workflow.currentStatus, 'IN_REVIEW');
+   * ```
+   */
+  createWorkflowContext(
+    request: ApraRequest,
+    config: { standardResponseDays?: number; extensionResponseDays?: number; businessDaysOnly?: boolean }
+  ): ApraRequestWorkflowContext {
+    return initializeApraWorkflow({
+      requestId: request.id,
+      tenantId: request.tenantId,
+      receivedAt: new Date(request.receivedAt),
+      config,
+    });
+  }
+
+  /**
+   * Check if a status transition is valid.
+   *
+   * Uses the workflow engine to validate transitions without
+   * modifying the request.
+   *
+   * @param currentStatus - Current request status
+   * @param targetStatus - Desired target status
+   * @returns true if the transition is allowed
+   *
+   * @example
+   * ```typescript
+   * if (service.canTransitionTo(request.status, 'FULFILLED')) {
+   *   await service.updateStatus(ctx, request.id, 'FULFILLED');
+   * }
+   * ```
+   */
+  canTransitionTo(
+    currentStatus: ApraRequestStatus,
+    targetStatus: ApraRequestStatus
+  ): boolean {
+    // Map the engine types to workflow types (they're compatible)
+    return isValidTransition(
+      currentStatus as WorkflowStatus,
+      targetStatus as WorkflowStatus
+    );
+  }
+
+  /**
+   * Get valid next statuses for a request.
+   *
+   * Returns the list of statuses the request can transition to.
+   *
+   * @param currentStatus - Current request status
+   * @returns Array of valid next statuses
+   *
+   * @example
+   * ```typescript
+   * const validStatuses = service.getNextStatuses(request.status);
+   * // Show only valid status options in UI
+   * ```
+   */
+  getNextStatuses(currentStatus: ApraRequestStatus): ApraRequestStatus[] {
+    return getValidNextStatuses(currentStatus as WorkflowStatus) as ApraRequestStatus[];
   }
 }

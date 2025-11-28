@@ -476,3 +476,59 @@ export async function getGatewayFundSummaryForTenant(
  * // cityConfig.requestLogRetentionYears === 3 (longer retention for larger entity)
  * ```
  */
+
+// =============================================================================
+// APRA WORKFLOW INTEGRATION EXAMPLE
+// =============================================================================
+
+/**
+ * Example showing how to integrate the APRA workflow engine with config resolution:
+ *
+ * ```typescript
+ * import { StateTenantConfig, TenantIdentity } from '../state';
+ * import { getApraConfig } from './domain-config.service';
+ * import { initializeApraWorkflow, transitionApraStatus } from '../records/apra-workflow.service';
+ * import { getDeadlineSummary } from '../records/apra-deadlines.service';
+ *
+ * // 1. Get APRA config for the tenant
+ * const apraConfig = getApraConfig(tenantConfig, tenantIdentity);
+ *
+ * if (!apraConfig) {
+ *   throw new Error('APRA not enabled for tenant');
+ * }
+ *
+ * // 2. Initialize a workflow for a new request
+ * const workflow = initializeApraWorkflow({
+ *   requestId: 'req-2025-001',
+ *   tenantId: tenantIdentity.tenantId,
+ *   receivedAt: new Date(),
+ *   config: apraConfig,
+ * });
+ *
+ * console.log(workflow.currentStatus); // 'RECEIVED'
+ * console.log(workflow.deadlines.initialDueDate); // 7 business days from now
+ *
+ * // 3. Get deadline summary for UI display
+ * const deadlineSummary = getDeadlineSummary(workflow.deadlines);
+ * console.log(deadlineSummary.message); // "7 business day(s) remaining"
+ *
+ * // 4. Transition to IN_REVIEW when staff starts processing
+ * const updatedWorkflow = transitionApraStatus({
+ *   context: workflow,
+ *   toStatus: 'IN_REVIEW',
+ *   reason: 'Beginning records search',
+ *   changedBy: 'clerk@example-town.gov',
+ * });
+ *
+ * console.log(updatedWorkflow.currentStatus); // 'IN_REVIEW'
+ * console.log(updatedWorkflow.transitions.length); // 1
+ *
+ * // 5. The workflow context can be serialized and persisted
+ * const workflowJson = JSON.stringify(updatedWorkflow);
+ * // Store in database alongside the APRA request
+ *
+ * // Key design principle: The workflow engine is pure logic.
+ * // It doesn't know about databases or HTTP - that's the engine/service layer's job.
+ * // The config comes from the tenant's state pack (INApraConfig via InApraPack).
+ * ```
+ */
