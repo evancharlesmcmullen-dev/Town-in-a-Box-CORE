@@ -13,6 +13,8 @@ import {
   QuorumResult,
   GoverningBody,
   MeetingAttendance,
+  FindingsOfFact,
+  FindingsValidationResult,
 } from '../types';
 import {
   INDIANA_OPEN_DOOR,
@@ -481,4 +483,160 @@ export function assertCompliance(result: ValidationResult): void {
       result.details
     );
   }
+}
+
+// =============================================================================
+// FINDINGS OF FACT VALIDATION (IC 36-7-4-918)
+// =============================================================================
+
+/**
+ * Validate findings of fact for a BZA/Plan Commission case.
+ * All criteria must have determinations with supporting rationale.
+ */
+export function validateFindingsComplete(
+  findings: FindingsOfFact
+): ValidationResult {
+  const criteria = findings.criteria || [];
+  const incomplete: Array<{ criterionNumber: number; missing: string }> = [];
+
+  for (const criterion of criteria) {
+    const hasDetermination = !!criterion.boardDetermination;
+    const hasRationale =
+      !!criterion.boardRationale && criterion.boardRationale.trim().length > 0;
+
+    if (!hasDetermination && !hasRationale) {
+      incomplete.push({
+        criterionNumber: criterion.criterionNumber,
+        missing: 'determination and rationale',
+      });
+    } else if (!hasDetermination) {
+      incomplete.push({
+        criterionNumber: criterion.criterionNumber,
+        missing: 'determination',
+      });
+    } else if (!hasRationale) {
+      incomplete.push({
+        criterionNumber: criterion.criterionNumber,
+        missing: 'rationale ("because" statement)',
+      });
+    }
+  }
+
+  if (incomplete.length > 0) {
+    return {
+      valid: false,
+      error: MEETINGS_ERROR_CODES.FINDINGS_INCOMPLETE,
+      message: 'Cannot approve: written findings required for all criteria',
+      statutoryCite: findings.statutoryCite,
+      details: {
+        missingCriteria: incomplete,
+      },
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validate that approval is legally supportable.
+ * All required criteria must have determination = MET.
+ * Per IC 36-7-4-918.5 and IC 36-7-4-918.4.
+ */
+export function validateApprovalSupported(
+  findings: FindingsOfFact
+): ValidationResult {
+  const criteria = findings.criteria || [];
+  const unmetCriteria = criteria.filter(
+    (c) => c.isRequired && c.boardDetermination === 'NOT_MET'
+  );
+
+  if (unmetCriteria.length > 0) {
+    return {
+      valid: false,
+      error: MEETINGS_ERROR_CODES.FINDINGS_NOT_SUPPORTED,
+      message: 'Cannot approve: one or more required criteria not met',
+      statutoryCite: findings.statutoryCite,
+      details: {
+        unmetCriteria: unmetCriteria.map((c) => ({
+          criterionNumber: c.criterionNumber,
+          criterionText: c.criterionText,
+          boardDetermination: c.boardDetermination,
+        })),
+      },
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validate that case denial is properly documented.
+ * At least one required criterion must be NOT_MET for a denial.
+ */
+export function validateDenialSupported(
+  findings: FindingsOfFact
+): ValidationResult {
+  const criteria = findings.criteria || [];
+  const unmetCriteria = criteria.filter(
+    (c) => c.isRequired && c.boardDetermination === 'NOT_MET'
+  );
+
+  if (unmetCriteria.length === 0) {
+    return {
+      valid: false,
+      error: MEETINGS_ERROR_CODES.FINDINGS_NOT_SUPPORTED,
+      message:
+        'Cannot deny: at least one required criterion must be found NOT_MET',
+      statutoryCite: findings.statutoryCite,
+      details: {
+        allCriteriaMet: true,
+      },
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validate findings for BZA action (approval or denial).
+ * Combines completeness and supportability checks.
+ */
+export function validateFindingsForAction(
+  findings: FindingsOfFact,
+  actionType: 'APPROVE' | 'DENY'
+): ValidationResult {
+  // First check completeness
+  const completenessCheck = validateFindingsComplete(findings);
+  if (!completenessCheck.valid) {
+    return completenessCheck;
+  }
+
+  // Then check if action is supported
+  if (actionType === 'APPROVE') {
+    return validateApprovalSupported(findings);
+  } else {
+    return validateDenialSupported(findings);
+  }
+}
+
+/**
+ * Check if findings can be modified.
+ * Findings are locked after adoption.
+ */
+export function validateFindingsNotLocked(
+  findings: FindingsOfFact
+): ValidationResult {
+  if (findings.isLocked) {
+    return {
+      valid: false,
+      error: MEETINGS_ERROR_CODES.FINDINGS_LOCKED,
+      message: 'Cannot modify findings after adoption',
+      details: {
+        adoptedAt: findings.adoptedAt,
+        voteRecordId: findings.voteRecordId,
+      },
+    };
+  }
+
+  return { valid: true };
 }

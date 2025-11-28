@@ -795,3 +795,194 @@ export interface DeliveryConfirmation {
   affidavitFileId?: string;
   notes?: string;
 }
+
+// =============================================================================
+// FINDINGS OF FACT TYPES
+// =============================================================================
+
+/**
+ * Case types that require findings of fact.
+ */
+export type FindingsCaseType =
+  | 'DEVELOPMENT_VARIANCE'
+  | 'USE_VARIANCE'
+  | 'SPECIAL_EXCEPTION'
+  | 'SUBDIVISION_WAIVER';
+
+/**
+ * Status of a findings of fact record.
+ */
+export type FindingsStatus =
+  | 'DRAFT'
+  | 'PENDING_REVIEW'
+  | 'ADOPTED'
+  | 'REJECTED';
+
+/**
+ * Determination for a criterion (staff recommendation or board determination).
+ */
+export type FindingsDetermination =
+  | 'MET'
+  | 'NOT_MET'
+  | 'UNABLE_TO_DETERMINE';
+
+/**
+ * A criterion template for findings of fact.
+ */
+export interface CriterionTemplate {
+  criterionNumber: number;
+  criterionText: string;
+  statutoryCite?: string;
+  isRequired: boolean;
+  guidanceNotes?: string;
+}
+
+/**
+ * A findings template for a case type.
+ */
+export interface FindingsTemplate {
+  id: string;
+  tenantId: string;
+  caseType: FindingsCaseType;
+  templateName: string;
+  statutoryCite: string;
+  criteriaTemplate: CriterionTemplate[];
+  isActive: boolean;
+  isDefault: boolean;
+  createdByUserId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * An individual criterion within findings of fact.
+ */
+export interface FindingsCriterion {
+  id: string;
+  tenantId: string;
+  findingsId: string;
+  criterionNumber: number;
+  criterionText: string;
+  statutoryCite?: string;
+  isRequired: boolean;
+
+  // Staff analysis
+  staffRecommendation?: FindingsDetermination;
+  staffRationale?: string;
+  staffUpdatedAt?: Date;
+  staffUpdatedByUserId?: string;
+
+  // Board determination
+  boardDetermination?: FindingsDetermination;
+  boardRationale?: string;
+  boardUpdatedAt?: Date;
+  boardUpdatedByUserId?: string;
+
+  // Guidance for staff
+  guidanceNotes?: string;
+
+  orderIndex: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * A condition of approval attached to findings.
+ */
+export interface FindingsCondition {
+  id: string;
+  tenantId: string;
+  findingsId: string;
+  conditionNumber: number;
+  conditionText: string;
+  orderIndex: number;
+  createdByUserId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Findings of fact for a BZA/Plan Commission case.
+ */
+export interface FindingsOfFact {
+  id: string;
+  tenantId: string;
+  meetingId: string;
+  agendaItemId?: string;
+  caseType: FindingsCaseType;
+  statutoryCite: string;
+  status: FindingsStatus;
+
+  // Criteria
+  criteria?: FindingsCriterion[];
+
+  // Conditions of approval
+  conditions?: FindingsCondition[];
+
+  // Adoption
+  voteRecordId?: string;
+  adoptedAt?: Date;
+  adoptedByUserId?: string;
+
+  // Document
+  generatedDocumentId?: string;
+  generatedAt?: Date;
+
+  // Lock status
+  isLocked: boolean;
+
+  // Audit
+  createdByUserId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Result of validating findings of fact.
+ */
+export interface FindingsValidationResult {
+  isComplete: boolean;
+  missingCriteria: Array<{
+    criterionNumber: number;
+    criterionText: string;
+    missing: 'determination' | 'rationale' | 'both';
+  }>;
+  canApprove: boolean;
+  canDeny: boolean;
+  unmetCriteria: Array<{
+    criterionNumber: number;
+    criterionText: string;
+  }>;
+}
+
+/**
+ * Input for updating staff recommendation.
+ */
+export interface UpdateStaffRecommendationInput {
+  recommendation: FindingsDetermination;
+  rationale: string;
+}
+
+/**
+ * Input for updating board determination.
+ */
+export interface UpdateBoardDeterminationInput {
+  determination: FindingsDetermination;
+  rationale: string;
+}
+
+/**
+ * Input for creating a condition of approval.
+ */
+export interface CreateConditionInput {
+  conditionText: string;
+}
+
+/**
+ * Document generation result.
+ */
+export interface FindingsDocumentResult {
+  documentId: string;
+  url?: string;
+  generatedAt: Date;
+}
