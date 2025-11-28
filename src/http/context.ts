@@ -5,7 +5,7 @@
 
 import { Request } from 'express';
 import { TenantContext, JurisdictionProfile, LocalGovKind } from '../index';
-import { UnitType } from '../core/state/state.types';
+import { UnitType, TenantIdentity, EntityClass } from '../core/state/state.types';
 import { unitTypeToLocalGovKind } from '../core/state/unit-type';
 
 /**
@@ -179,4 +179,57 @@ export function getAllDemoTenants(): DemoTenantConfig[] {
  */
 export function getDemoTenantsByUnitType(unitType: UnitType): DemoTenantConfig[] {
   return Object.values(DEMO_TENANTS).filter((t) => t.unitType === unitType);
+}
+
+/**
+ * Build TenantIdentity from an HTTP request.
+ *
+ * For development/demo, reads tenant info from headers:
+ * - x-tenant-id: Tenant identifier (default: 'lapel-in')
+ * - x-tenant-name: Tenant display name (optional, derived from config)
+ * - x-tenant-state: State code (optional, derived from config)
+ * - x-tenant-entity-class: Entity class (optional, derived from config)
+ * - x-tenant-population: Population (optional)
+ * - x-tenant-county: County name (optional)
+ *
+ * TODO: In production, replace with JWT/SAML token validation
+ * and real tenant/user lookup.
+ *
+ * @param req - Express request
+ * @returns TenantIdentity for dashboard/finance services
+ */
+export function getTenantIdentityFromRequest(req: Request): TenantIdentity {
+  const tenantId = req.header('x-tenant-id') ?? 'lapel-in';
+
+  // Look up tenant config for defaults
+  const tenantConfig = getDemoTenant(tenantId);
+
+  // Allow header overrides for flexibility
+  const state = (req.header('x-tenant-state') as 'IN') ?? tenantConfig.state;
+  // EntityClass excludes 'OTHER' - demo tenants never use 'OTHER' so this is safe
+  const entityClassHeader = req.header('x-tenant-entity-class') as EntityClass | undefined;
+  const entityClass: EntityClass = entityClassHeader ?? (tenantConfig.unitType as EntityClass);
+  const displayName = req.header('x-tenant-name') ?? tenantConfig.name;
+
+  // Population - from header or config
+  let population: number | undefined = tenantConfig.population;
+  const popHeader = req.header('x-tenant-population');
+  if (popHeader) {
+    const parsed = parseInt(popHeader, 10);
+    if (!isNaN(parsed)) {
+      population = parsed;
+    }
+  }
+
+  // County - from header or config
+  const countyName = req.header('x-tenant-county') ?? tenantConfig.countyName;
+
+  return {
+    tenantId,
+    displayName,
+    state,
+    entityClass,
+    population,
+    countyName,
+  };
 }
