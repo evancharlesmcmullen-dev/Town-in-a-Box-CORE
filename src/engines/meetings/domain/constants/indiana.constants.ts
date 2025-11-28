@@ -301,6 +301,191 @@ export const INDIANA_VARIANCE_CRITERIA = {
 } as const;
 
 /**
+ * Detailed findings criteria templates for Indiana variance types.
+ * These templates include the full criterion text as used in official findings documents.
+ */
+export interface FindingsCriterionDefinition {
+  criterionNumber: number;
+  criterionText: string;
+  statutoryCite: string;
+  isRequired: boolean;
+  guidanceNotes?: string;
+}
+
+export interface FindingsTemplateDefinition {
+  caseType: string;
+  templateName: string;
+  statutoryCite: string;
+  criteria: FindingsCriterionDefinition[];
+}
+
+/**
+ * Development Standards Variance criteria per IC 36-7-4-918.5.
+ * BZA must find ALL three criteria are met to approve.
+ */
+export const DEVELOPMENT_VARIANCE_TEMPLATE: FindingsTemplateDefinition = {
+  caseType: 'DEVELOPMENT_VARIANCE',
+  templateName: 'Indiana Development Standards Variance',
+  statutoryCite: 'IC 36-7-4-918.5',
+  criteria: [
+    {
+      criterionNumber: 1,
+      criterionText:
+        'The approval will not be injurious to the public health, safety, morals, and general welfare of the community.',
+      statutoryCite: 'IC 36-7-4-918.5(a)(1)',
+      isRequired: true,
+      guidanceNotes:
+        'Consider impacts on neighboring properties, traffic, noise, lighting, and community character. Document specific evidence supporting the determination.',
+    },
+    {
+      criterionNumber: 2,
+      criterionText:
+        'The use and value of the area adjacent to the property included in the variance will not be affected in a substantially adverse manner.',
+      statutoryCite: 'IC 36-7-4-918.5(a)(2)',
+      isRequired: true,
+      guidanceNotes:
+        'Consider property values, visual impact, compatibility with surrounding uses. May request appraisal or expert testimony.',
+    },
+    {
+      criterionNumber: 3,
+      criterionText:
+        'The strict application of the terms of the zoning ordinance will result in practical difficulties in the use of the property.',
+      statutoryCite: 'IC 36-7-4-918.5(a)(3)',
+      isRequired: true,
+      guidanceNotes:
+        'This is NOT a hardship standard. Practical difficulties means the property cannot be used reasonably for a permitted purpose without the variance. Self-created difficulties may weigh against approval.',
+    },
+  ],
+};
+
+/**
+ * Use Variance criteria per IC 36-7-4-918.4.
+ * BZA must find ALL five criteria are met to approve.
+ * NOTE: Use variances are only available in Advisory or Metropolitan Plan Commission jurisdictions.
+ * Area Plan Commissions cannot grant use variances.
+ */
+export const USE_VARIANCE_TEMPLATE: FindingsTemplateDefinition = {
+  caseType: 'USE_VARIANCE',
+  templateName: 'Indiana Use Variance',
+  statutoryCite: 'IC 36-7-4-918.4',
+  criteria: [
+    {
+      criterionNumber: 1,
+      criterionText:
+        'The approval will not be injurious to the public health, safety, morals, and general welfare of the community.',
+      statutoryCite: 'IC 36-7-4-918.4(a)(1)',
+      isRequired: true,
+      guidanceNotes:
+        'Consider impacts on neighboring properties, traffic, noise, lighting, and community character.',
+    },
+    {
+      criterionNumber: 2,
+      criterionText:
+        'The use and value of the area adjacent to the property included in the variance will not be affected in a substantially adverse manner.',
+      statutoryCite: 'IC 36-7-4-918.4(a)(2)',
+      isRequired: true,
+      guidanceNotes:
+        'Consider property values, visual impact, compatibility with surrounding uses.',
+    },
+    {
+      criterionNumber: 3,
+      criterionText:
+        'The need for the variance arises from some condition peculiar to the property involved.',
+      statutoryCite: 'IC 36-7-4-918.4(a)(3)',
+      isRequired: true,
+      guidanceNotes:
+        'The condition must be unique to this property, not common to the neighborhood. Self-imposed conditions do not satisfy this criterion.',
+    },
+    {
+      criterionNumber: 4,
+      criterionText:
+        'The strict application of the terms of the zoning ordinance will constitute an unnecessary hardship if applied to the property for which the variance is sought.',
+      statutoryCite: 'IC 36-7-4-918.4(a)(4)',
+      isRequired: true,
+      guidanceNotes:
+        'Hardship standard is stricter than practical difficulties. Must show the property cannot yield a reasonable return or be put to beneficial use without the variance.',
+    },
+    {
+      criterionNumber: 5,
+      criterionText:
+        'The approval does not interfere substantially with the comprehensive plan adopted under the 500 series.',
+      statutoryCite: 'IC 36-7-4-918.4(a)(5)',
+      isRequired: true,
+      guidanceNotes:
+        'Review the comprehensive plan land use map and goals. Document how the use variance is or is not consistent with the plan.',
+    },
+  ],
+};
+
+/**
+ * Special Exception criteria - these come from local ordinance, not state law.
+ * This is an empty template that tenants can customize.
+ */
+export const SPECIAL_EXCEPTION_TEMPLATE: FindingsTemplateDefinition = {
+  caseType: 'SPECIAL_EXCEPTION',
+  templateName: 'Special Exception (Local Ordinance)',
+  statutoryCite: 'Local Zoning Ordinance',
+  criteria: [],
+};
+
+/**
+ * Subdivision Waiver template - similar to development variance.
+ */
+export const SUBDIVISION_WAIVER_TEMPLATE: FindingsTemplateDefinition = {
+  caseType: 'SUBDIVISION_WAIVER',
+  templateName: 'Subdivision Waiver',
+  statutoryCite: 'IC 36-7-4-702',
+  criteria: [
+    {
+      criterionNumber: 1,
+      criterionText:
+        'The waiver will not be injurious to the public health, safety, morals, and general welfare of the community.',
+      statutoryCite: 'IC 36-7-4-702',
+      isRequired: true,
+      guidanceNotes:
+        'Consider infrastructure impacts, emergency access, and public safety.',
+    },
+    {
+      criterionNumber: 2,
+      criterionText:
+        'The waiver will not adversely affect the orderly development of the subdivision or surrounding area.',
+      statutoryCite: 'IC 36-7-4-702',
+      isRequired: true,
+      guidanceNotes:
+        'Consider lot layout, access, utilities, and drainage patterns.',
+    },
+    {
+      criterionNumber: 3,
+      criterionText:
+        'Strict application of the subdivision control ordinance will result in practical difficulties.',
+      statutoryCite: 'IC 36-7-4-702',
+      isRequired: true,
+      guidanceNotes:
+        'Document the specific subdivision requirement being waived and why strict compliance is impractical.',
+    },
+  ],
+};
+
+/**
+ * All default findings templates.
+ */
+export const INDIANA_FINDINGS_TEMPLATES: readonly FindingsTemplateDefinition[] = [
+  DEVELOPMENT_VARIANCE_TEMPLATE,
+  USE_VARIANCE_TEMPLATE,
+  SPECIAL_EXCEPTION_TEMPLATE,
+  SUBDIVISION_WAIVER_TEMPLATE,
+] as const;
+
+/**
+ * Get findings template by case type.
+ */
+export function getFindingsTemplate(
+  caseType: string
+): FindingsTemplateDefinition | undefined {
+  return INDIANA_FINDINGS_TEMPLATES.find((t) => t.caseType === caseType);
+}
+
+/**
  * Indiana records retention for meeting documents.
  */
 export const INDIANA_RETENTION = {
@@ -338,6 +523,13 @@ export const MEETINGS_ERROR_CODES = {
   EXEC_SESSION_UNCERTIFIED: 'COMPLIANCE.EXEC_SESSION_UNCERTIFIED',
   VOTE_DURING_EXEC_SESSION: 'COMPLIANCE.VOTE_DURING_EXEC_SESSION',
   RECUSED_MEMBER_VOTE: 'COMPLIANCE.RECUSED_MEMBER_VOTE',
+
+  // Findings of Fact errors
+  FINDINGS_INCOMPLETE: 'COMPLIANCE.FINDINGS_INCOMPLETE',
+  FINDINGS_NOT_SUPPORTED: 'COMPLIANCE.FINDINGS_NOT_SUPPORTED',
+  FINDINGS_LOCKED: 'COMPLIANCE.FINDINGS_LOCKED',
+  FINDINGS_NOT_FOUND: 'FINDINGS.NOT_FOUND',
+  CRITERION_NOT_FOUND: 'FINDINGS.CRITERION_NOT_FOUND',
 
   // Workflow errors
   AGENDA_NOT_PUBLISHED: 'WORKFLOW.AGENDA_NOT_PUBLISHED',

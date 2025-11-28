@@ -21,3 +21,7 @@ export * from './services/publication-rule.service';
 export * from './services/newspaper-schedule.service';
 export * from './services/deadline-calculator.service';
 export * from './services/notice-requirement.service';
+
+// Findings of Fact Engine Services
+export * from './services/findings-template.service';
+export * from './services/findings.service';
