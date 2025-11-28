@@ -259,3 +259,48 @@ export type {
 
 // Legal Template Renderer
 export { SimpleLegalTemplateRenderer } from './core/legal/templates/simple-legal-template.renderer';
+
+// =============================================================================
+// ENGINE: FINANCE LEDGER
+// =============================================================================
+
+// Service interface
+export type {
+  FinanceService,
+  CreateFundInput,
+  UpdateFundInput,
+  CreateAccountInput,
+  UpdateAccountInput,
+  CreateTransactionInput,
+  CreateAppropriationInput,
+  UpdateAppropriationInput,
+  AccountFilter,
+  TransactionFilter,
+  AppropriationFilter,
+} from './engines/finance/finance.service';
+
+// Types
+export type {
+  FundType,
+  Fund,
+  AccountCategory,
+  Account,
+  FinanceTransactionType,
+  FinanceTransactionLine,
+  FinanceTransaction,
+  Appropriation,
+  FundBalanceSummary,
+  AppropriationUsageSummary,
+} from './engines/finance/finance.types';
+
+// Implementation
+export { InMemoryFinanceService } from './engines/finance/in-memory-finance.service';
+export type { InMemoryFinanceSeedData } from './engines/finance/in-memory-finance.service';
+
+// Indiana fund seed helpers
+export {
+  getDefaultIndianaTownFunds,
+  getMinimalIndianaTownFunds,
+  getDefaultIndianaTownshipFunds,
+  getIndianaTownWithFireDeptFunds,
+} from './states/in/finance/in-finance-seed';
