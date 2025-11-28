@@ -10,7 +10,19 @@
  * - Adopted Budget (Form 4)
  * - Debt Report
  * - Line item explanations for audit support
+ *
+ * Also includes simplified fund summary exports using the core
+ * finance reporting infrastructure.
  */
 
 export * from './gateway.types';
 export * from './gateway.engine';
+
+// Fund summary export using core finance reports
+export {
+  buildInGatewayFundSummaryExport,
+  quickInGatewayFundSummaryExport,
+  validateInGatewayFundSummary,
+  InGatewayFundSummaryOptions,
+  InGatewayFundSummaryResult,
+} from './in-fund-summary.gateway';
