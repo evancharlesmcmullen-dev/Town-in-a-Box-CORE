@@ -73,6 +73,120 @@ export const INDIANA_PUBLICATION = {
 } as const;
 
 /**
+ * Structured Indiana publication rules for seeding.
+ * Each rule defines the statutory notice requirements for a specific type of hearing.
+ */
+export interface IndianaPublicationRuleDefinition {
+  /** Rule type identifier. */
+  ruleType: string;
+  /** Required number of publications. */
+  requiredPublications: number;
+  /** Required lead time in days before hearing. */
+  requiredLeadDays: number;
+  /** Whether publications must be in consecutive weeks. */
+  mustBeConsecutive: boolean;
+  /** Required publication channels. */
+  requiredChannels: string[];
+  /** Indiana Code citation. */
+  statutoryCite: string;
+  /** Human-readable description. */
+  description: string;
+}
+
+export const INDIANA_PUBLICATION_RULES: readonly IndianaPublicationRuleDefinition[] = [
+  {
+    ruleType: 'OPEN_DOOR_MEETING',
+    requiredPublications: 0,
+    requiredLeadDays: 0,
+    mustBeConsecutive: false,
+    requiredChannels: ['WEBSITE', 'PHYSICAL_POSTING'],
+    statutoryCite: 'IC 5-14-1.5-5',
+    description: 'Open Door Law meeting notice - 48 hours posting required, no newspaper publication',
+  },
+  {
+    ruleType: 'GENERAL_PUBLIC_HEARING',
+    requiredPublications: 2,
+    requiredLeadDays: 10,
+    mustBeConsecutive: false,
+    requiredChannels: ['NEWSPAPER'],
+    statutoryCite: 'IC 5-3-1-2(f)',
+    description: 'General public hearing requiring two publications at least 10 days before hearing',
+  },
+  {
+    ruleType: 'ZONING_MAP_AMENDMENT',
+    requiredPublications: 1,
+    requiredLeadDays: 10,
+    mustBeConsecutive: false,
+    requiredChannels: ['NEWSPAPER'],
+    statutoryCite: 'IC 36-7-4-602',
+    description: 'Zoning map amendment hearing requiring one publication at least 10 days before',
+  },
+  {
+    ruleType: 'VARIANCE_HEARING',
+    requiredPublications: 1,
+    requiredLeadDays: 10,
+    mustBeConsecutive: false,
+    requiredChannels: ['NEWSPAPER'],
+    statutoryCite: 'IC 36-7-4-920',
+    description: 'BZA variance hearing requiring one publication at least 10 days before',
+  },
+  {
+    ruleType: 'BOND_HEARING',
+    requiredPublications: 2,
+    requiredLeadDays: 10,
+    mustBeConsecutive: true,
+    requiredChannels: ['NEWSPAPER'],
+    statutoryCite: 'IC 6-1.1-20-3.1',
+    description: 'Bond issuance hearing requiring two consecutive weekly publications',
+  },
+  {
+    ruleType: 'BUDGET_HEARING',
+    requiredPublications: 2,
+    requiredLeadDays: 10,
+    mustBeConsecutive: true,
+    requiredChannels: ['NEWSPAPER'],
+    statutoryCite: 'IC 6-1.1-17-3',
+    description: 'Budget adoption hearing requiring two consecutive weekly publications',
+  },
+  {
+    ruleType: 'ANNEXATION_HEARING',
+    requiredPublications: 1,
+    requiredLeadDays: 20,
+    mustBeConsecutive: false,
+    requiredChannels: ['NEWSPAPER'],
+    statutoryCite: 'IC 36-4-3-2.2',
+    description: 'Annexation hearing requiring one publication at least 20 days before',
+  },
+  {
+    ruleType: 'TAX_ABATEMENT_HEARING',
+    requiredPublications: 1,
+    requiredLeadDays: 10,
+    mustBeConsecutive: false,
+    requiredChannels: ['NEWSPAPER'],
+    statutoryCite: 'IC 6-1.1-12.1-2.5',
+    description: 'Tax abatement hearing requiring one publication at least 10 days before',
+  },
+  {
+    ruleType: 'ECONOMIC_DEVELOPMENT_HEARING',
+    requiredPublications: 2,
+    requiredLeadDays: 10,
+    mustBeConsecutive: false,
+    requiredChannels: ['NEWSPAPER'],
+    statutoryCite: 'IC 36-7-12-10',
+    description: 'Economic development area designation hearing',
+  },
+] as const;
+
+/**
+ * Get a publication rule definition by type.
+ */
+export function getPublicationRule(
+  ruleType: string
+): IndianaPublicationRuleDefinition | undefined {
+  return INDIANA_PUBLICATION_RULES.find((r) => r.ruleType === ruleType);
+}
+
+/**
  * Indiana executive session legal bases (IC 5-14-1.5-6.1).
  */
 export interface ExecSessionBasis {
