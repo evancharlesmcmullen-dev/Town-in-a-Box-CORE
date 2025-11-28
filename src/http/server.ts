@@ -37,6 +37,7 @@ import { createFireContractsRouter } from './routes/fire-contracts.routes';
 import { createInsuranceBondsRouter } from './routes/insurance-bonds.routes';
 import { createPoliciesRouter } from './routes/policies.routes';
 import { createFinanceRouter } from './routes/finance.routes';
+import { createDashboardRouter, createFinanceSummaryRouter } from './routes/dashboard.routes';
 import { requestLogger, tenantContextMiddleware } from './middleware';
 import { errorHandler, notFoundHandler } from './errors';
 import { createAiRouter, AiClient, MockAiClient } from './ai.routes';
@@ -51,6 +52,7 @@ import { InMemoryFireContractService } from '../engines/fire/in-memory-fire-cont
 import { InMemoryInsuranceBondsService } from '../engines/insurance-bonds/in-memory-insurance-bonds.service';
 import { InMemoryPolicyService } from '../engines/policies/in-memory-policy.service';
 import { InMemoryFinanceService } from '../engines/finance/in-memory-finance.service';
+import { InMemoryFinanceRepository } from '../core/finance/in-memory-finance.repository';
 
 export interface ServerConfig {
   port: number;
@@ -194,15 +196,20 @@ export async function createServer(config: Partial<ServerConfig> = {}): Promise<
       name: 'Town-in-a-Box-CORE API',
       version: '0.1.0',
       endpoints: {
+        dashboard: '/api/dashboard',
         meetings: '/api/meetings',
         records: '/api/records',
         finance: '/api/finance',
+        'finance/fund-summary': '/api/finance/fund-summary',
+        'finance/forecast': '/api/finance/forecast',
         ai: '/api/ai',
         health: '/health',
       },
       headers: {
         'x-tenant-id': 'Tenant identifier (default: lapel-in)',
         'x-user-id': 'User identifier (default: system)',
+        'x-tenant-state': 'State code (default: IN)',
+        'x-tenant-entity-class': 'Entity class: TOWN, CITY, TOWNSHIP (default: TOWN)',
       },
     });
   });
@@ -250,6 +257,12 @@ export async function createServer(config: Partial<ServerConfig> = {}): Promise<
   const financeService = new InMemoryFinanceService();
   app.use('/api/finance', createFinanceRouter(financeService));
 
+  // Dashboard and Finance Summary routes (uses the core finance repository)
+  // Note: Cast needed due to index signature mismatch in FinanceRepository interface
+  const financeRepo = new InMemoryFinanceRepository() as unknown as import('../core/finance/finance.repository').FinanceRepository;
+  app.use('/api/dashboard', createDashboardRouter({ financeRepo }));
+  app.use('/api/finance', createFinanceSummaryRouter({ financeRepo }));
+
   // AI routes (standalone endpoints)
   const aiRouter = createAiRouter(baseMeetings, aiClient);
   app.use('/api/ai', aiRouter);
@@ -288,9 +301,12 @@ export async function startServer(
     console.log(`Server:    http://localhost:${port}`);
     console.log(`Health:    http://localhost:${port}/health`);
     console.log(`API Info:  http://localhost:${port}/api`);
+    console.log(`Dashboard: http://localhost:${port}/api/dashboard`);
     console.log(`Meetings:  http://localhost:${port}/api/meetings`);
     console.log(`Records:   http://localhost:${port}/api/records`);
     console.log(`Finance:   http://localhost:${port}/api/finance`);
+    console.log(`  Fund Summary: http://localhost:${port}/api/finance/fund-summary`);
+    console.log(`  Forecast:     http://localhost:${port}/api/finance/forecast`);
     console.log(`AI:        http://localhost:${port}/api/ai`);
     console.log('');
     console.log(`AI Provider: ${ai.config.provider}`);
