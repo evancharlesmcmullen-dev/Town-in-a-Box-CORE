@@ -13,7 +13,7 @@
  * - Fire, utility, and special purpose fund variations
  */
 
-import { StatutoryCitation } from '../../../core/state';
+import { StatutoryCitation, TenantIdentity, EntityClass } from '../../../core/state';
 import { FundType, AccountType } from '../../../core/finance/finance.types';
 
 // ============================================================================
@@ -1132,4 +1132,149 @@ export function buildDefaultChartOfAccounts(
   const expenditureAccounts = getAccountsForFundCategory(category.id, 'EXPENDITURE');
 
   return [...revenueAccounts, ...expenditureAccounts];
+}
+
+// ============================================================================
+// TENANT-BASED FUND DEFINITIONS
+// ============================================================================
+
+/**
+ * Options for configuring tenant-specific fund definitions.
+ */
+export interface TenantFundOptions {
+  hasWaterUtility?: boolean;
+  hasSewerUtility?: boolean;
+  hasStormwaterUtility?: boolean;
+  hasElectricUtility?: boolean;
+  hasGasUtility?: boolean;
+  hasFireDepartment?: boolean;
+  hasFireTerritory?: boolean;
+  hasParks?: boolean;
+  hasCemetery?: boolean;
+  hasTIF?: boolean;
+  hasAmbulance?: boolean;
+}
+
+/**
+ * Map EntityClass to JurisdictionKind.
+ */
+function entityClassToKind(entityClass: EntityClass): JurisdictionKind {
+  switch (entityClass) {
+    case 'TOWN':
+      return 'town';
+    case 'CITY':
+      return 'city';
+    case 'TOWNSHIP':
+      return 'township';
+    case 'COUNTY':
+      return 'county';
+    case 'SPECIAL_DISTRICT':
+      return 'town'; // Default to town rules for special districts
+    default:
+      return 'town';
+  }
+}
+
+/**
+ * Get base fund definitions for a tenant based on their identity.
+ *
+ * This is the primary entry point for wizards and importers to determine
+ * which funds should be created for a new tenant.
+ *
+ * @param identity - The tenant's identity including entityClass
+ * @param hasUtilityFunds - Whether the tenant has utility operations
+ * @param fireModel - The fire service model: 'department', 'territory', 'contract', or 'none'
+ * @returns Array of fund definitions applicable to this tenant
+ *
+ * @example
+ * ```ts
+ * const funds = getBaseFundDefinitionsForTenant(
+ *   { tenantId: '123', displayName: 'Westfield', state: 'IN', entityClass: 'TOWN' },
+ *   true,  // has utilities
+ *   'department'  // has fire department
+ * );
+ * ```
+ */
+export function getBaseFundDefinitionsForTenant(
+  identity: TenantIdentity,
+  hasUtilityFunds: boolean = false,
+  fireModel?: 'department' | 'territory' | 'contract' | 'none'
+): INFundDefinition[] {
+  const kind = entityClassToKind(identity.entityClass);
+
+  const options: TenantFundOptions = {
+    // Utility options - if hasUtilityFunds is true, enable water and sewer by default
+    hasWaterUtility: hasUtilityFunds,
+    hasSewerUtility: hasUtilityFunds,
+    // Fire model options
+    hasFireDepartment: fireModel === 'department',
+    hasFireTerritory: fireModel === 'territory',
+  };
+
+  return getRecommendedFunds(kind, options);
+}
+
+/**
+ * Get all base funds (required + recommended) for a tenant with specific options.
+ *
+ * This provides more granular control than getBaseFundDefinitionsForTenant.
+ *
+ * @param identity - The tenant's identity
+ * @param options - Specific feature flags for the tenant
+ * @returns Array of fund definitions applicable to this tenant
+ */
+export function getBaseFundDefinitionsWithOptions(
+  identity: TenantIdentity,
+  options: TenantFundOptions
+): INFundDefinition[] {
+  const kind = entityClassToKind(identity.entityClass);
+  return getRecommendedFunds(kind, options);
+}
+
+/**
+ * Get fund definitions suitable for creating a minimal fund structure.
+ *
+ * Returns only the required funds for a jurisdiction type.
+ *
+ * @param identity - The tenant's identity
+ * @returns Array of required fund definitions
+ */
+export function getMinimalFundDefinitions(
+  identity: TenantIdentity
+): INFundDefinition[] {
+  const kind = entityClassToKind(identity.entityClass);
+  return getRequiredFunds(kind);
+}
+
+/**
+ * Validate and suggest funds for a tenant based on common configurations.
+ *
+ * Returns a structured result with required, recommended, and optional funds.
+ *
+ * @param identity - The tenant's identity
+ * @param options - Configuration options
+ * @returns Categorized fund suggestions
+ */
+export function getFundSuggestionsForTenant(
+  identity: TenantIdentity,
+  options: TenantFundOptions = {}
+): {
+  required: INFundDefinition[];
+  recommended: INFundDefinition[];
+  optional: INFundDefinition[];
+} {
+  const kind = entityClassToKind(identity.entityClass);
+
+  const allApplicable = getApplicableFunds(kind);
+  const required = allApplicable.filter((f) => f.isRequired);
+  const recommended = getRecommendedFunds(kind, options).filter(
+    (f) => !f.isRequired
+  );
+  const optional = allApplicable.filter(
+    (f) =>
+      !f.isRequired &&
+      !recommended.find((r) => r.code === f.code)
+  );
+
+  return { required, recommended, optional };
 }

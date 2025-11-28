@@ -10,3 +10,4 @@
 export * from './import.types';
 export * from './import.profiles';
 export * from './import.engine';
+export * from './csv-import.service';
