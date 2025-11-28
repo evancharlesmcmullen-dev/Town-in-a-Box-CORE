@@ -947,7 +947,13 @@ export interface SimpleForecastScenario {
    */
   expenseModels?: SimpleExpenseModel[];
 
-  /** Extensibility for future fields (projects, debt, etc.) */
+  /**
+   * Debt instruments to simulate in this scenario.
+   * Debt service will be subtracted from fund balances.
+   */
+  debtInstruments?: SimpleDebtInstrument[];
+
+  /** Extensibility for future fields (projects, etc.) */
   [key: string]: unknown;
 }
 
@@ -981,12 +987,18 @@ export interface SimpleFundForecastPoint {
   projectedRevenue: number;
 
   /**
-   * Projected expenses for this period.
+   * Projected expenses for this period (operating expenses, not including debt).
    */
   projectedExpense: number;
 
   /**
-   * Ending balance (beginningBalance + projectedRevenue - projectedExpense).
+   * Debt service payment for this period (if any).
+   * Separated from operating expenses for visibility.
+   */
+  debtService?: number;
+
+  /**
+   * Ending balance (beginningBalance + projectedRevenue - projectedExpense - debtService).
    */
   endingBalance: number;
 }
@@ -1065,6 +1077,18 @@ export interface SimpleForecastResult {
    */
   fundsWithNegativeBalance?: string[];
 
+  /**
+   * Debt service schedules for this scenario.
+   * Generated from scenario.debtInstruments.
+   */
+  debtSchedules?: SimpleDebtServiceSchedule[];
+
+  /**
+   * Coverage summaries for funds with pledged revenues.
+   * Shows annual coverage ratios for revenue bond compliance.
+   */
+  coverageSummaries?: FundCoverageSummary[];
+
   /** Extensibility */
   [key: string]: unknown;
 }
@@ -1095,4 +1119,170 @@ export interface SimpleForecastBuildOptions {
    * Default: true.
    */
   calculateAggregates?: boolean;
+}
+
+// ============================================================================
+// DEBT/BOND MODELING TYPES (v1)
+// ============================================================================
+// These types support debt instrument modeling within the forecast engine.
+// They are designed for simple annual debt service projections and
+// coverage ratio calculations for revenue bonds.
+
+/**
+ * Type of debt instrument.
+ */
+export type DebtInstrumentType =
+  | 'GENERAL_OBLIGATION'   // Backed by full faith and credit
+  | 'REVENUE'              // Backed by specific revenue stream
+  | 'LEASE_RENTAL'         // Lease rental agreements
+  | 'OTHER';               // Other debt types
+
+/**
+ * Amortization type for debt service calculations.
+ */
+export type DebtAmortizationType =
+  | 'LEVEL_DEBT_SERVICE'   // Roughly equal total payment each period
+  | 'LEVEL_PRINCIPAL'      // Equal principal each period
+  | 'INTEREST_ONLY'        // Interest only, balloon principal at end
+  | 'CUSTOM';              // Custom schedule (future enhancement)
+
+/**
+ * Debt instrument for forecast modeling.
+ *
+ * This is a simplified representation of debt for use in the forecast engine.
+ * It focuses on the key parameters needed to generate debt service schedules.
+ */
+export interface SimpleDebtInstrument {
+  /** Unique identifier for this instrument */
+  id: string;
+
+  /** Human-readable name (e.g., "2020 Water Revenue Bonds") */
+  name: string;
+
+  /** Type of debt instrument */
+  type: DebtInstrumentType;
+
+  // Finance linkage
+  /** Tenant ID */
+  tenantId: string;
+
+  /** Primary fund paying the debt service (e.g., Debt Service Fund) */
+  fundId: string;
+
+  // Terms
+  /** Original principal amount */
+  principal: number;
+
+  /** Annual interest rate as decimal (e.g., 0.04 for 4%) */
+  annualInterestRate: number;
+
+  /** Total term in years */
+  termYears: number;
+
+  /** Year the debt was issued */
+  issueYear: number;
+
+  /** First year of debt service payments */
+  firstPaymentYear: number;
+
+  /** How the debt is amortized */
+  amortizationType: DebtAmortizationType;
+
+  // Optional coverage/pledged revenue info (for revenue bonds)
+  /**
+   * Fund ID of pledged revenue (for coverage ratio calculations).
+   * Typically a utility fund or other revenue-generating fund.
+   */
+  pledgedRevenueFundId?: string;
+
+  /**
+   * Minimum required coverage ratio (e.g., 1.25 for 125% coverage).
+   * Used for revenue bond covenant compliance tracking.
+   */
+  minCoverageRatio?: number;
+
+  /** Extensibility for future fields */
+  [key: string]: unknown;
+}
+
+/**
+ * A single debt service payment in a schedule.
+ */
+export interface DebtServicePayment {
+  /** Calendar year of the payment */
+  year: number;
+
+  /** Zero-based period index relative to forecast start */
+  periodIndex: number;
+
+  /** Human-readable label (e.g., "2026", "2026 Q1") */
+  label: string;
+
+  /** Principal portion of payment */
+  principal: number;
+
+  /** Interest portion of payment */
+  interest: number;
+
+  /** Total payment (principal + interest) */
+  total: number;
+}
+
+/**
+ * Complete debt service schedule for an instrument.
+ */
+export interface SimpleDebtServiceSchedule {
+  /** ID of the debt instrument */
+  instrumentId: string;
+
+  /** Payment schedule */
+  payments: DebtServicePayment[];
+}
+
+/**
+ * Coverage ratio summary for a fund with pledged revenues.
+ *
+ * Used to track revenue bond covenant compliance across the forecast horizon.
+ */
+export interface FundCoverageSummary {
+  /** Fund ID paying the debt service */
+  fundId: string;
+
+  /** Fund code for display */
+  fundCode: string;
+
+  /** Fund name for display */
+  fundName: string;
+
+  /** Fund ID of pledged revenue (if applicable) */
+  pledgedRevenueFundId?: string;
+
+  /** Minimum required coverage ratio from bond covenants */
+  minCoverageRatio?: number;
+
+  /**
+   * Coverage ratio analysis by year.
+   * Simple annual view for v1.
+   */
+  coverageByYear: CoverageYearEntry[];
+}
+
+/**
+ * Coverage ratio entry for a single year.
+ */
+export interface CoverageYearEntry {
+  /** Calendar year */
+  year: number;
+
+  /** Total pledged revenue for the year */
+  revenue: number;
+
+  /** Total debt service for the year */
+  debtService: number;
+
+  /** Coverage ratio (revenue / debtService), null if no debt service */
+  coverageRatio: number | null;
+
+  /** Whether the coverage meets the minimum requirement */
+  meetsRequirement: boolean | null;
 }
