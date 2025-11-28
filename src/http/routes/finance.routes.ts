@@ -4,9 +4,12 @@
 // Exposes fund accounting operations over HTTP.
 
 import { Router, Request, Response, NextFunction } from 'express';
+import { Pool } from 'pg';
 import { TenantContext } from '../../core/tenancy/tenancy.types';
 import { FinanceService } from '../../engines/finance/finance.service';
 import { InMemoryFinanceService } from '../../engines/finance/in-memory-finance.service';
+import { PostgresFinanceService } from '../../engines/finance/postgres-finance.service';
+import { TenantAwareDb } from '../../db/tenant-aware-db';
 import {
   FundType,
   AccountCategory,
@@ -14,6 +17,31 @@ import {
 } from '../../engines/finance/finance.types';
 import { getDefaultIndianaTownFunds } from '../../states/in/finance/in-finance-seed';
 import { buildTenantContext } from '../context';
+
+/**
+ * Configuration for creating a Postgres-backed finance service.
+ */
+export interface PostgresFinanceConfig {
+  /** Database connection pool */
+  pool: Pool;
+}
+
+/**
+ * Factory function to create a FinanceService based on environment configuration.
+ *
+ * If TIAB_USE_POSTGRES_FINANCE=true, creates a PostgresFinanceService.
+ * Otherwise, creates an InMemoryFinanceService (default for tests).
+ *
+ * @param config - Optional configuration for Postgres backend
+ * @returns A FinanceService instance
+ */
+export function createFinanceService(config?: PostgresFinanceConfig): FinanceService {
+  if (process.env.TIAB_USE_POSTGRES_FINANCE === 'true' && config?.pool) {
+    const db = new TenantAwareDb(config.pool);
+    return new PostgresFinanceService(db);
+  }
+  return new InMemoryFinanceService();
+}
 
 // Extend Request to include tenant context
 interface ApiRequest extends Request {

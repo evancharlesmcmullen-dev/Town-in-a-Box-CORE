@@ -296,6 +296,11 @@ export type {
 // Implementation
 export { InMemoryFinanceService } from './engines/finance/in-memory-finance.service';
 export type { InMemoryFinanceSeedData } from './engines/finance/in-memory-finance.service';
+export { PostgresFinanceService } from './engines/finance/postgres-finance.service';
+
+// Finance service factory
+export { createFinanceService } from './http/routes/finance.routes';
+export type { PostgresFinanceConfig } from './http/routes/finance.routes';
 
 // Indiana fund seed helpers
 export {
