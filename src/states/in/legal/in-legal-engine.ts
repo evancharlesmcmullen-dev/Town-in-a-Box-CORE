@@ -10,7 +10,11 @@ import {
   ApraExemption,
   AssistanceRuleSet,
   ComplianceTaskTemplate,
+  LegalTemplateKind,
+  RenderedLegalDocument,
+  LegalTemplateContext,
 } from '../../../core/legal/types';
+import { SimpleLegalTemplateRenderer } from '../../../core/legal/templates/simple-legal-template.renderer';
 import { LegalEngine } from '../../../core/legal/legal-engine';
 
 function isIndianaTown(j: JurisdictionProfile): boolean {
@@ -25,6 +29,13 @@ function isIndianaTown(j: JurisdictionProfile): boolean {
  */
 export class INLegalEngine implements LegalEngine {
   readonly state = 'IN';
+
+  /** Template renderer for producing legal documents */
+  private readonly templateRenderer: SimpleLegalTemplateRenderer;
+
+  constructor() {
+    this.templateRenderer = new SimpleLegalTemplateRenderer();
+  }
 
   //
   // APRA RULES
@@ -235,12 +246,48 @@ export class INLegalEngine implements LegalEngine {
   // TEMPLATE RENDERING
   //
 
-  renderTemplate(templateId: string, data: unknown): string {
-    // For now we just return a placeholder string.
-    // Later we will plug in a real template engine (e.g. Handlebars/ETA) and
-    // store Indiana-specific templates keyed by templateId.
+  /**
+   * Render a legal document from a template.
+   *
+   * This method uses the SimpleLegalTemplateRenderer to produce structured,
+   * typed legal documents for APRA responses, meeting notices, and BZA findings.
+   *
+   * @param kind - The type of template to render
+   * @param context - Context data for the template
+   * @returns A rendered legal document with title, body, and suggested filename
+   *
+   * @example
+   * ```typescript
+   * const engine = new INLegalEngine();
+   *
+   * // Render an APRA denial letter
+   * const doc = await engine.renderTemplate('APRA_DENIAL_STANDARD', {
+   *   requestId: 'APRA-2025-001',
+   *   requesterName: 'John Doe',
+   *   description: 'All emails from January 2025',
+   *   receivedAt: '2025-01-15T10:00:00Z',
+   *   exemptions: [{ citation: 'IC 5-14-3-4(b)(6)', description: 'Deliberative material' }],
+   *   jurisdictionName: 'Town of Lapel',
+   * });
+   *
+   * console.log(doc.title);           // "APRA Denial Letter - APRA-2025-001"
+   * console.log(doc.suggestedFileName); // "2025-01-15-apra-denial-apra-2025-001.md"
+   * ```
+   */
+  async renderTemplate(
+    kind: LegalTemplateKind,
+    context: LegalTemplateContext
+  ): Promise<RenderedLegalDocument> {
+    return this.templateRenderer.render(kind, context);
+  }
 
-    return `Template ${templateId} (IN) not implemented yet. Data: ${JSON.stringify(
+  /**
+   * @deprecated Use renderTemplate() with LegalTemplateKind instead.
+   * This method is kept for backwards compatibility only.
+   */
+  renderTemplateLegacy(templateId: string, data: unknown): string {
+    // Legacy stub for backwards compatibility
+    return `Template ${templateId} (IN) not implemented. Use renderTemplate() with LegalTemplateKind instead. Data: ${JSON.stringify(
       data,
     )}`;
   }
