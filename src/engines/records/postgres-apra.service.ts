@@ -573,7 +573,7 @@ export class PostgresApraService implements ApraService {
         [requestId]
       );
 
-      return result.rows.map((row) => this.rowToScope(row));
+      return result.rows.map((row: ApraRequestScopeRow) => this.rowToScope(row));
     });
   }
 
@@ -597,7 +597,7 @@ export class PostgresApraService implements ApraService {
         [requestId]
       );
 
-      return result.rows.map((row) => this.rowToClarification(row));
+      return result.rows.map((row: ApraClarificationRow) => this.rowToClarification(row));
     });
   }
 
@@ -621,7 +621,7 @@ export class PostgresApraService implements ApraService {
         [requestId]
       );
 
-      return result.rows.map((row) => this.rowToExemption(row));
+      return result.rows.map((row: ApraExemptionRow) => this.rowToExemption(row));
     });
   }
 
@@ -645,7 +645,7 @@ export class PostgresApraService implements ApraService {
         [requestId]
       );
 
-      return result.rows.map((row) => this.rowToFulfillment(row));
+      return result.rows.map((row: ApraFulfillmentRow) => this.rowToFulfillment(row));
     });
   }
 
