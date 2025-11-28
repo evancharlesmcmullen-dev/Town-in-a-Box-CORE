@@ -814,3 +814,285 @@ export interface ScenarioValidationResult {
   errors: string[];
   warnings: string[];
 }
+
+// ============================================================================
+// SIMPLE BASELINE FORECAST TYPES (v1)
+// ============================================================================
+// These simpler types are designed for the baseline buildForecast() function
+// that takes Fund[] and Transaction[] directly. They complement the more
+// complex models above for simple "Town CFO" projections.
+
+/**
+ * Time granularity for simple forecasts.
+ * - annual: One data point per year
+ * - quarterly: Four data points per year (Q1-Q4)
+ */
+export type SimpleTimeGranularity = 'annual' | 'quarterly';
+
+/**
+ * Simple revenue projection model.
+ *
+ * For v1, uses basic growth rate modeling. Future versions may
+ * link to the more complex RevenueModel types above.
+ */
+export interface SimpleRevenueModel {
+  /**
+   * Fund ID this model applies to.
+   * If omitted, applies as a global default.
+   */
+  fundId?: string;
+
+  /**
+   * Optional baseline annual revenue amount.
+   * If provided, used as starting point for projections.
+   * If omitted, derived from historical transactions.
+   */
+  baseAmount?: number;
+
+  /**
+   * Annual growth rate as a decimal (e.g., 0.02 for 2%).
+   * Applied compounding each period.
+   */
+  growthRate?: number;
+
+  /**
+   * Optional description.
+   */
+  description?: string;
+}
+
+/**
+ * Simple expense projection model.
+ *
+ * For v1, uses basic growth rate modeling. Future versions may
+ * link to the more complex ExpenseModel types above.
+ */
+export interface SimpleExpenseModel {
+  /**
+   * Fund ID this model applies to.
+   * If omitted, applies as a global default.
+   */
+  fundId?: string;
+
+  /**
+   * Optional baseline annual expense amount.
+   * If provided, used as starting point for projections.
+   * If omitted, derived from historical transactions.
+   */
+  baseAmount?: number;
+
+  /**
+   * Annual growth rate as a decimal (e.g., 0.02 for 2%).
+   * Applied compounding each period.
+   */
+  growthRate?: number;
+
+  /**
+   * Optional description.
+   */
+  description?: string;
+}
+
+/**
+ * Simple forecast scenario definition.
+ *
+ * A lightweight scenario for baseline "what-if" projections.
+ * Use FundForecastScenario above for more complex modeling.
+ */
+export interface SimpleForecastScenario {
+  /**
+   * Unique identifier for this scenario.
+   */
+  id: string;
+
+  /**
+   * Human-readable name.
+   */
+  name: string;
+
+  /**
+   * Optional description.
+   */
+  description?: string;
+
+  /**
+   * Number of years to project.
+   */
+  horizonYears: number;
+
+  /**
+   * Time granularity.
+   */
+  granularity: SimpleTimeGranularity;
+
+  /**
+   * Default revenue growth rate for all funds.
+   * E.g., 0.02 for 2% per year.
+   */
+  defaultRevenueGrowthRate?: number;
+
+  /**
+   * Default expense growth rate for all funds.
+   * E.g., 0.02 for 2% per year.
+   */
+  defaultExpenseGrowthRate?: number;
+
+  /**
+   * Per-fund revenue model overrides.
+   */
+  revenueModels?: SimpleRevenueModel[];
+
+  /**
+   * Per-fund expense model overrides.
+   */
+  expenseModels?: SimpleExpenseModel[];
+
+  /** Extensibility for future fields (projects, debt, etc.) */
+  [key: string]: unknown;
+}
+
+/**
+ * A single point in a fund's simple forecast time series.
+ */
+export interface SimpleFundForecastPoint {
+  /**
+   * Zero-based period index.
+   */
+  periodIndex: number;
+
+  /**
+   * Calendar year of this period.
+   */
+  year: number;
+
+  /**
+   * Human-readable label (e.g., "2026", "2026 Q1").
+   */
+  label: string;
+
+  /**
+   * Beginning balance for this period.
+   */
+  beginningBalance: number;
+
+  /**
+   * Projected revenue for this period.
+   */
+  projectedRevenue: number;
+
+  /**
+   * Projected expenses for this period.
+   */
+  projectedExpense: number;
+
+  /**
+   * Ending balance (beginningBalance + projectedRevenue - projectedExpense).
+   */
+  endingBalance: number;
+}
+
+/**
+ * Simple forecast series for a single fund.
+ */
+export interface SimpleFundForecastSeries {
+  /**
+   * Fund ID.
+   */
+  fundId: string;
+
+  /**
+   * Fund code (e.g., "101").
+   */
+  fundCode: string;
+
+  /**
+   * Fund name.
+   */
+  fundName: string;
+
+  /**
+   * Forecast points for each period.
+   */
+  points: SimpleFundForecastPoint[];
+}
+
+/**
+ * Complete simple forecast result.
+ */
+export interface SimpleForecastResult {
+  /**
+   * Scenario ID that generated this forecast.
+   */
+  scenarioId: string;
+
+  /**
+   * Scenario name.
+   */
+  scenarioName?: string;
+
+  /**
+   * Horizon in years.
+   */
+  horizonYears: number;
+
+  /**
+   * Granularity used.
+   */
+  granularity: SimpleTimeGranularity;
+
+  /**
+   * As-of date when forecast was computed.
+   */
+  asOf: Date;
+
+  /**
+   * Per-fund forecast series.
+   */
+  fundSeries: SimpleFundForecastSeries[];
+
+  /**
+   * Total beginning balance across all funds (first period).
+   */
+  totalBeginningBalance?: number;
+
+  /**
+   * Total ending balance across all funds (last period).
+   */
+  totalEndingBalance?: number;
+
+  /**
+   * Fund IDs projected to go negative at any point.
+   */
+  fundsWithNegativeBalance?: string[];
+
+  /** Extensibility */
+  [key: string]: unknown;
+}
+
+/**
+ * Options for the simple buildForecast function.
+ */
+export interface SimpleForecastBuildOptions {
+  /**
+   * Include funds with zero balances.
+   * Default: true.
+   */
+  includeZeroBalanceFunds?: boolean;
+
+  /**
+   * Include inactive funds.
+   * Default: false.
+   */
+  includeInactiveFunds?: boolean;
+
+  /**
+   * Specific fund IDs to include.
+   */
+  fundIds?: string[];
+
+  /**
+   * Calculate aggregate totals.
+   * Default: true.
+   */
+  calculateAggregates?: boolean;
+}
