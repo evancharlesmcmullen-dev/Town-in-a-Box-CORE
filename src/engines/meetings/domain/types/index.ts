@@ -587,3 +587,211 @@ export interface MeetingRecordBundle {
   assembledAt?: Date;
   assembledByUserId?: string;
 }
+
+// =============================================================================
+// NOTICE & PUBLICATION TYPES
+// =============================================================================
+
+/**
+ * Reason for a notice/publication requirement.
+ * Maps to Indiana statutory requirements.
+ */
+export type NoticeReason =
+  | 'OPEN_DOOR_MEETING'
+  | 'GENERAL_PUBLIC_HEARING'
+  | 'ZONING_MAP_AMENDMENT'
+  | 'VARIANCE_HEARING'
+  | 'BOND_HEARING'
+  | 'BUDGET_HEARING'
+  | 'ANNEXATION_HEARING'
+  | 'TAX_ABATEMENT_HEARING'
+  | 'ECONOMIC_DEVELOPMENT_HEARING';
+
+/**
+ * Status of a notice requirement.
+ */
+export type NoticeRequirementStatus =
+  | 'NOT_STARTED'
+  | 'IN_PROGRESS'
+  | 'SATISFIED'
+  | 'FAILED'
+  | 'WAIVED';
+
+/**
+ * Risk level for deadline compliance.
+ */
+export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'IMPOSSIBLE';
+
+/**
+ * Day of week for newspaper schedules.
+ */
+export type DayOfWeek =
+  | 'SUNDAY'
+  | 'MONDAY'
+  | 'TUESDAY'
+  | 'WEDNESDAY'
+  | 'THURSDAY'
+  | 'FRIDAY'
+  | 'SATURDAY';
+
+/**
+ * Notice channel type.
+ */
+export type NoticeChannelType =
+  | 'NEWSPAPER'
+  | 'WEBSITE'
+  | 'PHYSICAL_POSTING'
+  | 'EMAIL_LIST'
+  | 'SOCIAL_MEDIA';
+
+/**
+ * Publication rule defining statutory requirements.
+ */
+export interface PublicationRule {
+  id: string;
+  tenantId: string;
+  ruleType: NoticeReason;
+  requiredPublications: number;
+  requiredLeadDays: number;
+  mustBeConsecutive: boolean;
+  requiredChannels: NoticeChannelType[];
+  statutoryCite: string;
+  description?: string;
+  isActive: boolean;
+  createdAt: Date;
+}
+
+/**
+ * Submission deadline configuration for a newspaper.
+ */
+export interface SubmissionDeadline {
+  publicationDay: DayOfWeek;
+  submissionDay: DayOfWeek;
+  submissionTime: string; // HH:MM format (24hr)
+  daysBeforePublication: number;
+}
+
+/**
+ * Newspaper schedule for publication planning.
+ */
+export interface NewspaperSchedule {
+  id: string;
+  tenantId: string;
+  name: string;
+  publicationDays: DayOfWeek[];
+  submissionDeadlines: SubmissionDeadline[];
+  submissionLeadDays: number;
+  holidayClosures: Date[];
+  canAccommodateRush: boolean;
+  isLegalPublication: boolean;
+  contactInfo?: {
+    phone?: string;
+    email?: string;
+    contactName?: string;
+    address?: string;
+  };
+  isActive: boolean;
+  createdAt: Date;
+}
+
+/**
+ * A required publication for a deadline calculation.
+ */
+export interface RequiredPublication {
+  publicationNumber: number;
+  latestPublicationDate: Date;
+  submissionDeadline: Date;
+  newspaperChannelId: string | null;
+}
+
+/**
+ * Deadline calculation result.
+ */
+export interface DeadlineCalculation {
+  hearingDate: Date;
+  noticeReason: NoticeReason;
+  rule: PublicationRule;
+  requiredPublications: RequiredPublication[];
+  earliestSubmissionDeadline: Date;
+  riskLevel: RiskLevel;
+  riskMessage: string | null;
+}
+
+/**
+ * Notice requirement for a meeting or hearing.
+ */
+export interface NoticeRequirement {
+  id: string;
+  tenantId: string;
+  meetingId: string;
+  agendaItemId?: string;
+  noticeReason: NoticeReason;
+  ruleId: string;
+  status: NoticeRequirementStatus;
+  calculatedDeadlineAt?: Date;
+  riskLevel?: RiskLevel;
+  satisfiedAt?: Date;
+  satisfiedByUserId?: string;
+  failedAt?: Date;
+  failureReason?: string;
+  waivedAt?: Date;
+  waivedByUserId?: string;
+  waiverReason?: string;
+  deliveries?: NoticeDelivery[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Delivery status for a notice.
+ */
+export type NoticeDeliveryStatus =
+  | 'PENDING'
+  | 'SUBMITTED'
+  | 'CONFIRMED'
+  | 'FAILED';
+
+/**
+ * A delivery attempt for a notice requirement.
+ */
+export interface NoticeDelivery {
+  id: string;
+  tenantId: string;
+  requirementId: string;
+  channelType: NoticeChannelType;
+  channelId?: string; // Reference to newspaper_schedules or notice_channels
+  status: NoticeDeliveryStatus;
+  publicationNumber: number; // 1st, 2nd publication etc.
+  submittedAt?: Date;
+  submittedByUserId?: string;
+  targetPublicationDate?: Date;
+  actualPublicationDate?: Date;
+  confirmedAt?: Date;
+  confirmedByUserId?: string;
+  proofDocumentId?: string;
+  affidavitFileId?: string;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Input for creating a notice delivery.
+ */
+export interface CreateNoticeDeliveryInput {
+  channelType: NoticeChannelType;
+  channelId?: string;
+  publicationNumber: number;
+  targetPublicationDate?: Date;
+  notes?: string;
+}
+
+/**
+ * Confirmation input for a delivery.
+ */
+export interface DeliveryConfirmation {
+  actualPublicationDate: Date;
+  proofDocumentId?: string;
+  affidavitFileId?: string;
+  notes?: string;
+}
