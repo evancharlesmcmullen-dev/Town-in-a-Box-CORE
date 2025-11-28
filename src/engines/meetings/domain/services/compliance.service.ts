@@ -1,0 +1,426 @@
+// src/engines/meetings/domain/services/compliance.service.ts
+//
+// Compliance validation service for Indiana statutory requirements.
+// Implements the critical validation rules from CLAUDE.md.
+
+import {
+  Meeting,
+  ExecutiveSession,
+  MemberRecusal,
+  VoteRecord,
+  MeetingAction,
+  Minutes,
+  QuorumResult,
+  GoverningBody,
+  MeetingAttendance,
+} from '../types';
+import {
+  INDIANA_OPEN_DOOR,
+  MEETINGS_ERROR_CODES,
+  MeetingsErrorCode,
+} from '../constants/indiana.constants';
+import { isExecSessionActive, allSessionsCertified } from '../state-machines';
+
+/**
+ * Error thrown when a compliance violation is detected.
+ */
+export class ComplianceError extends Error {
+  constructor(
+    public readonly code: MeetingsErrorCode,
+    public readonly statutoryCite?: string,
+    public readonly details?: Record<string, unknown>
+  ) {
+    super(`Compliance violation: ${code}`);
+    this.name = 'ComplianceError';
+  }
+}
+
+/**
+ * Validation result with structured error information.
+ */
+export interface ValidationResult {
+  valid: boolean;
+  error?: MeetingsErrorCode;
+  message?: string;
+  statutoryCite?: string;
+  details?: Record<string, unknown>;
+}
+
+// =============================================================================
+// OPEN DOOR LAW VALIDATION (IC 5-14-1.5)
+// =============================================================================
+
+/**
+ * Validate Open Door Law notice requirements.
+ * IC 5-14-1.5-5: 48 business hours notice required for non-emergency meetings.
+ */
+export function validateOpenDoorNotice(
+  meeting: Meeting,
+  postedAt: Date
+): ValidationResult {
+  // Emergency meetings are exempt per IC 5-14-1.5-5(d)
+  if (meeting.isEmergency) {
+    return { valid: true };
+  }
+
+  const hoursUntilMeeting = differenceInHours(
+    meeting.scheduledStart,
+    postedAt
+  );
+
+  if (hoursUntilMeeting < INDIANA_OPEN_DOOR.standardNoticeHours) {
+    return {
+      valid: false,
+      error: MEETINGS_ERROR_CODES.INSUFFICIENT_NOTICE,
+      message: `Open Door Law requires ${INDIANA_OPEN_DOOR.standardNoticeHours} hours notice. Current: ${hoursUntilMeeting} hours.`,
+      statutoryCite: INDIANA_OPEN_DOOR.noticeCite,
+      details: {
+        requiredHours: INDIANA_OPEN_DOOR.standardNoticeHours,
+        actualHours: hoursUntilMeeting,
+        meetingStart: meeting.scheduledStart.toISOString(),
+        noticePosted: postedAt.toISOString(),
+      },
+    };
+  }
+
+  return { valid: true };
+}
+
+// =============================================================================
+// EXECUTIVE SESSION VALIDATION (IC 5-14-1.5-6.1)
+// =============================================================================
+
+/**
+ * Check if voting is blocked due to an active executive session.
+ * Per IC 5-14-1.5-6.1: No final action can be taken during executive session.
+ *
+ * CRITICAL RULE #1 from CLAUDE.md
+ */
+export function validateVoteNotInExecSession(
+  executiveSessions: ExecutiveSession[]
+): ValidationResult {
+  const activeSession = executiveSessions.find((es) =>
+    isExecSessionActive(es.status)
+  );
+
+  if (activeSession) {
+    return {
+      valid: false,
+      error: MEETINGS_ERROR_CODES.VOTE_DURING_EXEC_SESSION,
+      message: 'Cannot record vote while in executive session',
+      statutoryCite: INDIANA_OPEN_DOOR.execSessionCite,
+      details: {
+        activeSessionId: activeSession.id,
+        sessionBasis: activeSession.basisCode,
+      },
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Check if all executive sessions are certified before minutes approval.
+ *
+ * CRITICAL RULE #2 from CLAUDE.md
+ */
+export function validateAllExecSessionsCertified(
+  executiveSessions: ExecutiveSession[]
+): ValidationResult {
+  if (!allSessionsCertified(executiveSessions)) {
+    const uncertified = executiveSessions.filter(
+      (es) => es.status !== 'CERTIFIED' && es.status !== 'CANCELLED'
+    );
+
+    return {
+      valid: false,
+      error: MEETINGS_ERROR_CODES.EXEC_SESSION_UNCERTIFIED,
+      message:
+        'Cannot approve meeting minutes without all executive session certifications',
+      details: {
+        uncertifiedSessions: uncertified.map((es) => ({
+          id: es.id,
+          status: es.status,
+          basisCode: es.basisCode,
+        })),
+      },
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validate executive session has proper pre-certification before entering.
+ */
+export function validateExecSessionPreCert(
+  session: ExecutiveSession
+): ValidationResult {
+  if (!session.preCertStatement || !session.preCertByUserId) {
+    return {
+      valid: false,
+      error: MEETINGS_ERROR_CODES.EXEC_SESSION_UNCERTIFIED,
+      message: 'Executive session requires pre-certification before entering',
+      statutoryCite: INDIANA_OPEN_DOOR.execSessionCite,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validate executive session has proper post-certification after ending.
+ */
+export function validateExecSessionPostCert(
+  session: ExecutiveSession
+): ValidationResult {
+  if (session.status === 'ENDED') {
+    if (!session.postCertStatement || !session.postCertByUserId) {
+      return {
+        valid: false,
+        error: MEETINGS_ERROR_CODES.EXEC_SESSION_UNCERTIFIED,
+        message:
+          'Executive session requires post-certification statement confirming no unauthorized matters were discussed',
+        statutoryCite: INDIANA_OPEN_DOOR.execSessionCite,
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
+// =============================================================================
+// QUORUM VALIDATION
+// =============================================================================
+
+/**
+ * Calculate quorum for a meeting.
+ */
+export function calculateQuorum(
+  body: GoverningBody,
+  attendance: MeetingAttendance[],
+  recusals: MemberRecusal[],
+  agendaItemId?: string
+): QuorumResult {
+  const totalMembers = body.totalSeats;
+
+  // Count present members
+  const presentMembers = attendance.filter(
+    (a) => a.status === 'PRESENT' || a.status === 'LATE'
+  ).length;
+
+  // Count recused members for this item (or entire meeting if no item specified)
+  const recusedMembers = recusals.filter((r) =>
+    agendaItemId ? r.agendaItemId === agendaItemId : !r.agendaItemId
+  ).length;
+
+  // Calculate required quorum
+  let requiredForQuorum: number;
+  switch (body.quorumType) {
+    case 'MAJORITY':
+      requiredForQuorum = Math.floor(totalMembers / 2) + 1;
+      break;
+    case 'TWO_THIRDS':
+      requiredForQuorum = Math.ceil((totalMembers * 2) / 3);
+      break;
+    case 'SPECIFIC':
+      requiredForQuorum = body.quorumNumber ?? Math.floor(totalMembers / 2) + 1;
+      break;
+    default:
+      requiredForQuorum = Math.floor(totalMembers / 2) + 1;
+  }
+
+  // Eligible voters = present minus recused
+  const eligibleVoters = presentMembers - recusedMembers;
+
+  // Check if quorum is met
+  const isQuorumMet = eligibleVoters >= requiredForQuorum;
+
+  return {
+    isQuorumMet,
+    totalMembers,
+    presentMembers,
+    recusedMembers,
+    requiredForQuorum,
+    eligibleVoters,
+  };
+}
+
+/**
+ * Validate that quorum is present for voting.
+ */
+export function validateQuorum(quorum: QuorumResult): ValidationResult {
+  if (!quorum.isQuorumMet) {
+    return {
+      valid: false,
+      error: MEETINGS_ERROR_CODES.NO_QUORUM,
+      message: `Quorum not present. Required: ${quorum.requiredForQuorum}, Present: ${quorum.presentMembers}, Eligible (minus recused): ${quorum.eligibleVoters}`,
+      details: quorum,
+    };
+  }
+
+  return { valid: true };
+}
+
+// =============================================================================
+// RECUSAL VALIDATION
+// =============================================================================
+
+/**
+ * Validate that a recused member's vote is not counted.
+ *
+ * CRITICAL RULE #5 from CLAUDE.md
+ */
+export function validateNotRecused(
+  memberId: string,
+  recusals: MemberRecusal[],
+  agendaItemId?: string
+): ValidationResult {
+  const isRecused = recusals.some(
+    (r) =>
+      r.memberId === memberId &&
+      (r.agendaItemId === agendaItemId || !r.agendaItemId)
+  );
+
+  if (isRecused) {
+    return {
+      valid: false,
+      error: MEETINGS_ERROR_CODES.RECUSED_MEMBER_VOTE,
+      message: 'Recused member cannot vote on this item',
+      statutoryCite: 'IC 35-44.1-1-4',
+      details: { memberId, agendaItemId },
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Filter out recused members from vote count.
+ * Returns only eligible votes (silently excludes recused members).
+ */
+export function filterRecusedVotes(
+  votes: VoteRecord[],
+  recusals: MemberRecusal[],
+  agendaItemId?: string
+): VoteRecord[] {
+  const recusedMemberIds = new Set(
+    recusals
+      .filter((r) => r.agendaItemId === agendaItemId || !r.agendaItemId)
+      .map((r) => r.memberId)
+  );
+
+  return votes.filter((v) => !recusedMemberIds.has(v.memberId));
+}
+
+// =============================================================================
+// ACTION VALIDATION
+// =============================================================================
+
+/**
+ * Validate that an action has a proper second (for motions).
+ */
+export function validateActionHasSecond(
+  action: MeetingAction
+): ValidationResult {
+  if (action.actionType === 'MOTION' && !action.secondedByUserId) {
+    return {
+      valid: false,
+      error: MEETINGS_ERROR_CODES.ACTION_REQUIRES_SECOND,
+      message: 'Motion requires a second before voting',
+      details: { actionId: action.id, actionType: action.actionType },
+    };
+  }
+
+  return { valid: true };
+}
+
+// =============================================================================
+// MINUTES VALIDATION
+// =============================================================================
+
+/**
+ * Validate that minutes can be approved (all exec sessions certified).
+ */
+export function validateMinutesApproval(
+  meeting: Meeting
+): ValidationResult {
+  // Check all executive sessions are certified
+  const execSessionCheck = validateAllExecSessionsCertified(
+    meeting.executiveSessions ?? []
+  );
+  if (!execSessionCheck.valid) {
+    return execSessionCheck;
+  }
+
+  return { valid: true };
+}
+
+// =============================================================================
+// SCHEDULING VALIDATION
+// =============================================================================
+
+/**
+ * Validate meeting scheduling (notice requirements).
+ *
+ * CRITICAL RULE #4 from CLAUDE.md
+ */
+export function validateMeetingSchedule(
+  meeting: Partial<Meeting>,
+  now: Date = new Date()
+): ValidationResult {
+  if (!meeting.scheduledStart) {
+    return {
+      valid: false,
+      error: MEETINGS_ERROR_CODES.INVALID_TRANSITION,
+      message: 'Meeting must have a scheduled start time',
+    };
+  }
+
+  // Skip validation for emergency meetings
+  if (meeting.isEmergency) {
+    return { valid: true };
+  }
+
+  const hoursUntilMeeting = differenceInHours(meeting.scheduledStart, now);
+
+  if (hoursUntilMeeting < INDIANA_OPEN_DOOR.standardNoticeHours) {
+    return {
+      valid: false,
+      error: MEETINGS_ERROR_CODES.INSUFFICIENT_NOTICE,
+      message: `Cannot schedule meeting without sufficient notice time. Requires ${INDIANA_OPEN_DOOR.standardNoticeHours} hours, only ${hoursUntilMeeting} hours until meeting.`,
+      statutoryCite: INDIANA_OPEN_DOOR.noticeCite,
+      details: {
+        requiredHours: INDIANA_OPEN_DOOR.standardNoticeHours,
+        availableHours: hoursUntilMeeting,
+      },
+    };
+  }
+
+  return { valid: true };
+}
+
+// =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
+/**
+ * Calculate difference in hours between two dates.
+ */
+function differenceInHours(later: Date, earlier: Date): number {
+  const diffMs = later.getTime() - earlier.getTime();
+  return Math.floor(diffMs / (1000 * 60 * 60));
+}
+
+/**
+ * Throw ComplianceError if validation fails.
+ */
+export function assertCompliance(result: ValidationResult): void {
+  if (!result.valid) {
+    throw new ComplianceError(
+      result.error!,
+      result.statutoryCite,
+      result.details
+    );
+  }
+}
