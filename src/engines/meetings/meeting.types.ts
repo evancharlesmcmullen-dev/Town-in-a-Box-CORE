@@ -15,22 +15,38 @@ export interface GoverningBody {
 
 /**
  * High-level type of a meeting.
+ * Includes both legacy lowercase and domain UPPERCASE variants for compatibility.
  */
 export type MeetingType =
   | 'regular'
   | 'special'
   | 'emergency'
-  | 'executiveSession';
+  | 'executiveSession'
+  // UPPERCASE variants from domain types
+  | 'REGULAR'
+  | 'SPECIAL'
+  | 'EMERGENCY'
+  | 'EXECUTIVE'
+  | 'JOINT';
 
 /**
  * Lifecycle status of a meeting.
+ * Includes both legacy lowercase and domain UPPERCASE variants for compatibility.
  */
 export type MeetingStatus =
   | 'planned'
   | 'noticed'
   | 'inSession'
   | 'adjourned'
-  | 'cancelled';
+  | 'cancelled'
+  // UPPERCASE variants from domain types
+  | 'DRAFT'
+  | 'SCHEDULED'
+  | 'NOTICED'
+  | 'IN_PROGRESS'
+  | 'RECESSED'
+  | 'ADJOURNED'
+  | 'CANCELLED';
 
 /**
  * A single agenda item for a meeting.
@@ -72,12 +88,14 @@ export interface VoteRecord {
 
 /**
  * Method used to post public notice of a meeting.
+ * Includes SOCIAL_MEDIA for compatibility with domain types.
  */
 export type NoticeMethod =
   | 'PHYSICAL_POSTING'
   | 'WEBSITE'
   | 'NEWSPAPER'
-  | 'EMAIL_LIST';
+  | 'EMAIL_LIST'
+  | 'SOCIAL_MEDIA';
 
 /**
  * A record of public notice being posted for a meeting.

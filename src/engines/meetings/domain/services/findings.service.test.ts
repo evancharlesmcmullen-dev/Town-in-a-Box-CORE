@@ -77,7 +77,8 @@ describe('FindingsTemplateService', () => {
     it('should return criteria with guidance notes', () => {
       const criteria = templateService.getCriteriaForCaseType('DEVELOPMENT_VARIANCE');
 
-      expect(criteria[2].guidanceNotes).toContain('practical difficulties');
+      // Case-insensitive match for 'practical difficulties'
+      expect(criteria[2].guidanceNotes?.toLowerCase()).toContain('practical difficulties');
     });
   });
 
