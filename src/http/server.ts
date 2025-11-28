@@ -36,6 +36,7 @@ import { createCemeteriesRouter } from './routes/cemeteries.routes';
 import { createFireContractsRouter } from './routes/fire-contracts.routes';
 import { createInsuranceBondsRouter } from './routes/insurance-bonds.routes';
 import { createPoliciesRouter } from './routes/policies.routes';
+import { createFinanceRouter } from './routes/finance.routes';
 import { requestLogger, tenantContextMiddleware } from './middleware';
 import { errorHandler, notFoundHandler } from './errors';
 import { createAiRouter, AiClient, MockAiClient } from './ai.routes';
@@ -49,6 +50,7 @@ import { InMemoryCemeteryService } from '../engines/cemeteries/in-memory-cemeter
 import { InMemoryFireContractService } from '../engines/fire/in-memory-fire-contract.service';
 import { InMemoryInsuranceBondsService } from '../engines/insurance-bonds/in-memory-insurance-bonds.service';
 import { InMemoryPolicyService } from '../engines/policies/in-memory-policy.service';
+import { InMemoryFinanceService } from '../engines/finance/in-memory-finance.service';
 
 export interface ServerConfig {
   port: number;
@@ -194,6 +196,7 @@ export async function createServer(config: Partial<ServerConfig> = {}): Promise<
       endpoints: {
         meetings: '/api/meetings',
         records: '/api/records',
+        finance: '/api/finance',
         ai: '/api/ai',
         health: '/health',
       },
@@ -243,6 +246,10 @@ export async function createServer(config: Partial<ServerConfig> = {}): Promise<
   // Policies routes (shared across all unit types, not under /township)
   app.use('/api/policies', createPoliciesRouter(policyService));
 
+  // Finance Ledger routes
+  const financeService = new InMemoryFinanceService();
+  app.use('/api/finance', createFinanceRouter(financeService));
+
   // AI routes (standalone endpoints)
   const aiRouter = createAiRouter(baseMeetings, aiClient);
   app.use('/api/ai', aiRouter);
@@ -283,6 +290,7 @@ export async function startServer(
     console.log(`API Info:  http://localhost:${port}/api`);
     console.log(`Meetings:  http://localhost:${port}/api/meetings`);
     console.log(`Records:   http://localhost:${port}/api/records`);
+    console.log(`Finance:   http://localhost:${port}/api/finance`);
     console.log(`AI:        http://localhost:${port}/api/ai`);
     console.log('');
     console.log(`AI Provider: ${ai.config.provider}`);
