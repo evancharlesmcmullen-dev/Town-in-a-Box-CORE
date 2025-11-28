@@ -245,3 +245,17 @@ export type {
 // =============================================================================
 
 export { INLegalEngine } from './states/in/legal/in-legal-engine';
+
+// Legal Template Types
+export type {
+  LegalTemplateKind,
+  RenderedLegalDocument,
+  ApraTemplateContext,
+  MeetingNoticeTemplateContext,
+  BzaUseVarianceTemplateContext,
+  LegalTemplateContext,
+  LegalTemplateRenderer,
+} from './core/legal/types';
+
+// Legal Template Renderer
+export { SimpleLegalTemplateRenderer } from './core/legal/templates/simple-legal-template.renderer';
