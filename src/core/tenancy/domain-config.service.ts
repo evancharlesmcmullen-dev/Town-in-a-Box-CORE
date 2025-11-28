@@ -228,6 +228,73 @@ export function checkDomainAvailable(
 }
 
 // =============================================================================
+// GATEWAY FUND SUMMARY EXPORTS
+// =============================================================================
+
+// Import Gateway types and functions
+import { FinanceRepository } from '../finance/finance.repository';
+import { GatewayFundSummaryExport } from '../finance/gateway/gateway.types';
+import { buildInGatewayFundSummaryExport } from '../../states/in/finance/gateway/in-fund-summary.gateway';
+
+/**
+ * Get Gateway Fund Summary for a tenant.
+ *
+ * This function routes to the appropriate state-specific Gateway export
+ * based on the tenant's state. Currently supports Indiana (IN).
+ *
+ * @param repo - Finance repository for data access
+ * @param tenantConfig - The tenant's full configuration
+ * @param tenantIdentity - The tenant's identity
+ * @param asOf - The "as of" date for the report
+ * @returns Promise resolving to the Gateway export, or undefined if state not supported
+ *
+ * @example
+ * ```typescript
+ * const repo = new InMemoryFinanceRepository(seedData);
+ * const export = await getGatewayFundSummaryForTenant(
+ *   repo,
+ *   tenantConfig,
+ *   tenantIdentity,
+ *   new Date('2024-12-31')
+ * );
+ *
+ * if (export) {
+ *   console.log('Total funds:', export.rows.length);
+ *   console.log('Total ending balance:', export.totalEndingBalance);
+ * }
+ * ```
+ */
+export async function getGatewayFundSummaryForTenant(
+  repo: FinanceRepository,
+  tenantConfig: StateTenantConfig,
+  tenantIdentity: TenantIdentity,
+  asOf: Date
+): Promise<GatewayFundSummaryExport | undefined> {
+  // Check if finance module is enabled
+  if (!isDomainAvailable(tenantConfig, tenantIdentity, 'finance')) {
+    return undefined;
+  }
+
+  // Route to state-specific implementation
+  switch (tenantIdentity.state) {
+    case 'IN':
+      // Indiana - use the Indiana-specific Gateway export
+      const result = await buildInGatewayFundSummaryExport(
+        repo,
+        tenantIdentity,
+        asOf,
+        { validate: false }
+      );
+      return result.export;
+
+    default:
+      // State not yet supported for Gateway exports
+      // Future: Add other states as they're implemented
+      return undefined;
+  }
+}
+
+// =============================================================================
 // Usage Example (for documentation purposes)
 // =============================================================================
 
