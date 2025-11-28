@@ -26,7 +26,15 @@ import {
   SimpleExpenseModel,
   SimpleTimeGranularity,
   SimpleForecastBuildOptions,
+  SimpleDebtInstrument,
+  SimpleDebtServiceSchedule,
+  FundCoverageSummary,
+  CoverageYearEntry,
 } from './forecast.types';
+import {
+  buildDebtServiceSchedules,
+  getDebtServiceByFundByYear,
+} from './forecast.debt.service';
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -222,6 +230,25 @@ export function buildForecast(
   // Step 3: Determine number of periods
   const periodsPerYear = scenario.granularity === 'annual' ? 1 : 4;
   const totalPeriods = scenario.horizonYears * periodsPerYear;
+  const startYear = asOf.getFullYear() + 1;
+
+  // Step 3.5: Generate debt service schedules if instruments are provided
+  let debtSchedules: SimpleDebtServiceSchedule[] | undefined;
+  let debtByFundByYear: Map<string, Map<number, number>> | undefined;
+
+  if (scenario.debtInstruments && scenario.debtInstruments.length > 0) {
+    debtSchedules = buildDebtServiceSchedules(
+      scenario.debtInstruments,
+      scenario.horizonYears,
+      startYear
+    );
+    debtByFundByYear = getDebtServiceByFundByYear(
+      scenario.debtInstruments,
+      debtSchedules,
+      startYear,
+      scenario.horizonYears
+    );
+  }
 
   // Step 4: Build forecast series for each fund
   const fundSeries: SimpleFundForecastSeries[] = [];
@@ -263,7 +290,26 @@ export function buildForecast(
       const periodRevenue = roundCurrency((baseRevenue * revenueGrowthFactor) / periodsPerYear);
       const periodExpense = roundCurrency((baseExpense * expenseGrowthFactor) / periodsPerYear);
 
-      const endingBalance = roundCurrency(beginningBalance + periodRevenue - periodExpense);
+      // Calculate debt service for this period (annual, scaled for quarterly)
+      let periodDebtService = 0;
+      if (debtByFundByYear) {
+        const fundDebt = debtByFundByYear.get(fund.id);
+        if (fundDebt) {
+          const annualDebt = fundDebt.get(year) ?? 0;
+          // Scale debt service for quarterly periods (annual debt / periods per year)
+          // But only apply once per year for quarterly - apply in Q1 only
+          if (scenario.granularity === 'annual') {
+            periodDebtService = annualDebt;
+          } else {
+            // For quarterly, distribute evenly across quarters
+            periodDebtService = roundCurrency(annualDebt / periodsPerYear);
+          }
+        }
+      }
+
+      const endingBalance = roundCurrency(
+        beginningBalance + periodRevenue - periodExpense - periodDebtService
+      );
 
       if (endingBalance < 0) {
         hasNegativeBalance = true;
@@ -276,6 +322,7 @@ export function buildForecast(
         beginningBalance,
         projectedRevenue: periodRevenue,
         projectedExpense: periodExpense,
+        debtService: periodDebtService > 0 ? periodDebtService : undefined,
         endingBalance,
       });
 
@@ -315,7 +362,21 @@ export function buildForecast(
     );
   }
 
-  // Step 6: Build and return result
+  // Step 6: Build coverage summaries for funds with pledged revenues
+  let coverageSummaries: FundCoverageSummary[] | undefined;
+
+  if (scenario.debtInstruments && scenario.debtInstruments.length > 0) {
+    coverageSummaries = buildCoverageSummaries(
+      scenario.debtInstruments,
+      debtSchedules ?? [],
+      fundSeries,
+      filteredFunds,
+      startYear,
+      scenario.horizonYears
+    );
+  }
+
+  // Step 7: Build and return result
   return {
     scenarioId: scenario.id,
     scenarioName: scenario.name,
@@ -326,6 +387,8 @@ export function buildForecast(
     totalBeginningBalance,
     totalEndingBalance,
     fundsWithNegativeBalance: fundsWithNegativeBalance.length > 0 ? fundsWithNegativeBalance : undefined,
+    debtSchedules,
+    coverageSummaries: coverageSummaries && coverageSummaries.length > 0 ? coverageSummaries : undefined,
   };
 }
 
@@ -376,6 +439,151 @@ function getPeriodInfo(
     const quarter = quarterIndex + 1; // 1-4
     return { year, label: `${year} Q${quarter}` };
   }
+}
+
+// ============================================================================
+// COVERAGE SUMMARY HELPERS
+// ============================================================================
+
+/**
+ * Build coverage summaries for debt instruments with pledged revenues.
+ *
+ * For each instrument that has a pledgedRevenueFundId and minCoverageRatio,
+ * this function calculates annual coverage ratios by comparing pledged
+ * fund revenue to debt service payments.
+ *
+ * Note: Coverage modeling is simple and annual-only for v1. It does not
+ * account for:
+ * - Reserve funds or additional bonds tests
+ * - Intra-year cash flow timing
+ * - Subordinate vs. senior debt
+ *
+ * @param instruments - Debt instruments (filtered to those with pledged revenue)
+ * @param schedules - Pre-computed debt service schedules
+ * @param fundSeries - Forecast series for all funds
+ * @param funds - Fund definitions for lookups
+ * @param startYear - First year of forecast
+ * @param horizonYears - Number of years in forecast
+ * @returns Array of coverage summaries, one per unique pledged fund
+ */
+function buildCoverageSummaries(
+  instruments: SimpleDebtInstrument[],
+  schedules: SimpleDebtServiceSchedule[],
+  fundSeries: SimpleFundForecastSeries[],
+  funds: Fund[],
+  startYear: number,
+  horizonYears: number
+): FundCoverageSummary[] {
+  // Filter to instruments with pledged revenue requirements
+  const pledgedInstruments = instruments.filter(
+    (i) => i.pledgedRevenueFundId && i.minCoverageRatio !== undefined
+  );
+
+  if (pledgedInstruments.length === 0) {
+    return [];
+  }
+
+  // Group instruments by pledged revenue fund
+  const instrumentsByPledgedFund = new Map<string, SimpleDebtInstrument[]>();
+  for (const instrument of pledgedInstruments) {
+    const pledgedFundId = instrument.pledgedRevenueFundId!;
+    const group = instrumentsByPledgedFund.get(pledgedFundId) ?? [];
+    group.push(instrument);
+    instrumentsByPledgedFund.set(pledgedFundId, group);
+  }
+
+  // Build schedule lookup by instrument ID
+  const scheduleByInstrument = new Map<string, SimpleDebtServiceSchedule>();
+  for (const schedule of schedules) {
+    scheduleByInstrument.set(schedule.instrumentId, schedule);
+  }
+
+  // Build fund series lookup by fund ID
+  const seriesByFund = new Map<string, SimpleFundForecastSeries>();
+  for (const series of fundSeries) {
+    seriesByFund.set(series.fundId, series);
+  }
+
+  // Build fund lookup for names
+  const fundById = new Map<string, Fund>();
+  for (const fund of funds) {
+    fundById.set(fund.id, fund);
+  }
+
+  const summaries: FundCoverageSummary[] = [];
+
+  // For each pledged fund, build a coverage summary
+  for (const [pledgedFundId, groupInstruments] of instrumentsByPledgedFund) {
+    const pledgedFund = fundById.get(pledgedFundId);
+    const pledgedSeries = seriesByFund.get(pledgedFundId);
+
+    // Use the most restrictive (highest) coverage ratio from the group
+    const minCoverageRatio = Math.max(
+      ...groupInstruments.map((i) => i.minCoverageRatio ?? 0)
+    );
+
+    // The fund paying debt service (use first instrument's fundId)
+    const debtServiceFundId = groupInstruments[0].fundId;
+    const debtServiceFund = fundById.get(debtServiceFundId);
+
+    const coverageByYear: CoverageYearEntry[] = [];
+
+    for (let yearOffset = 0; yearOffset < horizonYears; yearOffset++) {
+      const year = startYear + yearOffset;
+
+      // Calculate total pledged revenue for this year
+      let revenue = 0;
+      if (pledgedSeries) {
+        // Sum revenue across all periods in this year
+        for (const point of pledgedSeries.points) {
+          if (point.year === year) {
+            revenue += point.projectedRevenue;
+          }
+        }
+      }
+      revenue = roundCurrency(revenue);
+
+      // Calculate total debt service for this year (sum across all instruments in group)
+      let debtService = 0;
+      for (const instrument of groupInstruments) {
+        const schedule = scheduleByInstrument.get(instrument.id);
+        if (schedule) {
+          for (const payment of schedule.payments) {
+            if (payment.year === year) {
+              debtService += payment.total;
+            }
+          }
+        }
+      }
+      debtService = roundCurrency(debtService);
+
+      // Calculate coverage ratio
+      const coverageRatio = debtService > 0 ? roundCurrency(revenue / debtService) : null;
+      const meetsRequirement =
+        coverageRatio !== null && minCoverageRatio > 0
+          ? coverageRatio >= minCoverageRatio
+          : null;
+
+      coverageByYear.push({
+        year,
+        revenue,
+        debtService,
+        coverageRatio,
+        meetsRequirement,
+      });
+    }
+
+    summaries.push({
+      fundId: debtServiceFundId,
+      fundCode: debtServiceFund?.code ?? '',
+      fundName: debtServiceFund?.name ?? '',
+      pledgedRevenueFundId: pledgedFundId,
+      minCoverageRatio,
+      coverageByYear,
+    });
+  }
+
+  return summaries;
 }
 
 // ============================================================================

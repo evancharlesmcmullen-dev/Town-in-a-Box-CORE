@@ -16,6 +16,7 @@ import {
   SimpleRevenueModel,
   SimpleExpenseModel,
   SimpleTimeGranularity,
+  SimpleDebtInstrument,
 } from '../../../core/finance/forecast/forecast.types';
 import { INFinanceConfig } from './in-finance.config';
 
@@ -185,6 +186,214 @@ export function buildPessimisticInForecastScenario(
     defaultRevenueGrowthRate: IN_DEFAULT_FORECAST_ASSUMPTIONS.defaultRevenueGrowthRate - 0.01, // -1%
     defaultExpenseGrowthRate: IN_DEFAULT_FORECAST_ASSUMPTIONS.defaultExpenseGrowthRate + 0.01, // +1%
   });
+}
+
+// ============================================================================
+// DEBT SCENARIO BUILDERS
+// ============================================================================
+
+/**
+ * Build a forecast scenario that includes debt instruments.
+ *
+ * Takes a base scenario and adds debt instruments for debt service modeling.
+ * This is useful for projecting the impact of new bond issuances or
+ * analyzing existing debt obligations.
+ *
+ * @param baseScenario - The base forecast scenario to extend
+ * @param instruments - Debt instruments to add to the scenario
+ * @returns SimpleForecastScenario with debt instruments included
+ *
+ * @example
+ * ```typescript
+ * const baseScenario = buildDefaultInForecastScenario(config, 5);
+ * const waterBond: SimpleDebtInstrument = {
+ *   id: 'water-bond-2020',
+ *   name: '2020 Water Revenue Bonds',
+ *   type: 'REVENUE',
+ *   tenantId: 'town-1',
+ *   fundId: 'debt-service-fund',
+ *   principal: 5000000,
+ *   annualInterestRate: 0.035,
+ *   termYears: 20,
+ *   issueYear: 2020,
+ *   firstPaymentYear: 2021,
+ *   amortizationType: 'LEVEL_DEBT_SERVICE',
+ *   pledgedRevenueFundId: 'water-utility-fund',
+ *   minCoverageRatio: 1.25,
+ * };
+ * const debtScenario = buildInDebtScenario(baseScenario, [waterBond]);
+ * ```
+ */
+export function buildInDebtScenario(
+  baseScenario: SimpleForecastScenario,
+  instruments: SimpleDebtInstrument[]
+): SimpleForecastScenario {
+  return {
+    ...baseScenario,
+    id: `${baseScenario.id}_WITH_DEBT`,
+    name: `${baseScenario.name} (with Debt Service)`,
+    description: baseScenario.description
+      ? `${baseScenario.description} Includes ${instruments.length} debt instrument(s).`
+      : `Forecast with ${instruments.length} debt instrument(s).`,
+    debtInstruments: instruments,
+  };
+}
+
+/**
+ * Create a sample GO (General Obligation) bond for Indiana municipalities.
+ *
+ * Returns a template debt instrument with typical Indiana GO bond terms.
+ * Modify as needed for specific issuances.
+ *
+ * @param tenantId - The tenant ID
+ * @param fundId - The debt service fund ID
+ * @param principal - The bond principal amount
+ * @param options - Optional overrides for bond terms
+ * @returns SimpleDebtInstrument configured for Indiana GO bonds
+ *
+ * @example
+ * ```typescript
+ * const goBond = createIndianaGOBond('town-1', 'fund-401', 2000000, {
+ *   name: '2024 Street Improvement Bonds',
+ *   interestRate: 0.04,
+ *   termYears: 15,
+ * });
+ * ```
+ */
+export function createIndianaGOBond(
+  tenantId: string,
+  fundId: string,
+  principal: number,
+  options?: {
+    id?: string;
+    name?: string;
+    interestRate?: number;
+    termYears?: number;
+    issueYear?: number;
+    firstPaymentYear?: number;
+  }
+): SimpleDebtInstrument {
+  const currentYear = new Date().getFullYear();
+  const issueYear = options?.issueYear ?? currentYear;
+
+  return {
+    id: options?.id ?? `go-bond-${issueYear}`,
+    name: options?.name ?? `${issueYear} General Obligation Bonds`,
+    type: 'GENERAL_OBLIGATION',
+    tenantId,
+    fundId,
+    principal,
+    annualInterestRate: options?.interestRate ?? 0.04, // 4% typical for municipal GO
+    termYears: options?.termYears ?? 15,
+    issueYear,
+    firstPaymentYear: options?.firstPaymentYear ?? issueYear + 1,
+    amortizationType: 'LEVEL_DEBT_SERVICE',
+  };
+}
+
+/**
+ * Create a sample Revenue bond for Indiana utilities.
+ *
+ * Returns a template debt instrument with typical Indiana revenue bond terms.
+ * Includes pledged revenue configuration for coverage ratio tracking.
+ *
+ * @param tenantId - The tenant ID
+ * @param debtServiceFundId - The debt service fund ID (where payments come from)
+ * @param pledgedRevenueFundId - The utility fund ID (source of pledged revenue)
+ * @param principal - The bond principal amount
+ * @param options - Optional overrides for bond terms
+ * @returns SimpleDebtInstrument configured for Indiana revenue bonds
+ *
+ * @example
+ * ```typescript
+ * const waterBond = createIndianaRevenueBond(
+ *   'town-1',
+ *   'fund-601',  // Debt service fund
+ *   'fund-605',  // Water utility fund
+ *   5000000,
+ *   {
+ *     name: '2024 Water System Improvements',
+ *     interestRate: 0.035,
+ *     minCoverageRatio: 1.25,
+ *   }
+ * );
+ * ```
+ */
+export function createIndianaRevenueBond(
+  tenantId: string,
+  debtServiceFundId: string,
+  pledgedRevenueFundId: string,
+  principal: number,
+  options?: {
+    id?: string;
+    name?: string;
+    interestRate?: number;
+    termYears?: number;
+    issueYear?: number;
+    firstPaymentYear?: number;
+    minCoverageRatio?: number;
+  }
+): SimpleDebtInstrument {
+  const currentYear = new Date().getFullYear();
+  const issueYear = options?.issueYear ?? currentYear;
+
+  return {
+    id: options?.id ?? `revenue-bond-${issueYear}`,
+    name: options?.name ?? `${issueYear} Revenue Bonds`,
+    type: 'REVENUE',
+    tenantId,
+    fundId: debtServiceFundId,
+    principal,
+    annualInterestRate: options?.interestRate ?? 0.035, // 3.5% typical for revenue bonds
+    termYears: options?.termYears ?? 20, // Longer terms typical for infrastructure
+    issueYear,
+    firstPaymentYear: options?.firstPaymentYear ?? issueYear + 1,
+    amortizationType: 'LEVEL_DEBT_SERVICE',
+    pledgedRevenueFundId,
+    minCoverageRatio: options?.minCoverageRatio ?? 1.25, // 125% typical Indiana covenant
+  };
+}
+
+/**
+ * Create a lease-rental debt instrument for Indiana.
+ *
+ * Lease-rental financing is common in Indiana for buildings, equipment,
+ * and other capital purchases. Typically structured as level payments.
+ *
+ * @param tenantId - The tenant ID
+ * @param fundId - The fund making lease payments
+ * @param principal - The lease principal amount
+ * @param options - Optional overrides for lease terms
+ * @returns SimpleDebtInstrument configured for lease-rental
+ */
+export function createIndianaLeaseRental(
+  tenantId: string,
+  fundId: string,
+  principal: number,
+  options?: {
+    id?: string;
+    name?: string;
+    interestRate?: number;
+    termYears?: number;
+    issueYear?: number;
+  }
+): SimpleDebtInstrument {
+  const currentYear = new Date().getFullYear();
+  const issueYear = options?.issueYear ?? currentYear;
+
+  return {
+    id: options?.id ?? `lease-${issueYear}`,
+    name: options?.name ?? `${issueYear} Lease-Rental Agreement`,
+    type: 'LEASE_RENTAL',
+    tenantId,
+    fundId,
+    principal,
+    annualInterestRate: options?.interestRate ?? 0.045, // Slightly higher than GO
+    termYears: options?.termYears ?? 10, // Typically shorter than bonds
+    issueYear,
+    firstPaymentYear: issueYear, // Usually starts immediately
+    amortizationType: 'LEVEL_DEBT_SERVICE',
+  };
 }
 
 // ============================================================================
