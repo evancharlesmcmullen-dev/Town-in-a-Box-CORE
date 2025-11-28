@@ -280,7 +280,7 @@ export function validateQuorum(quorum: QuorumResult): ValidationResult {
       valid: false,
       error: MEETINGS_ERROR_CODES.NO_QUORUM,
       message: `Quorum not present. Required: ${quorum.requiredForQuorum}, Present: ${quorum.presentMembers}, Eligible (minus recused): ${quorum.eligibleVoters}`,
-      details: quorum,
+      details: quorum as unknown as Record<string, unknown>,
     };
   }
 

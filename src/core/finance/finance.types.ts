@@ -215,7 +215,12 @@ export interface BudgetLine {
 
   // Classification
   lineType?: 'REVENUE' | 'APPROPRIATION' | 'TRANSFER';
+  /** Alias for lineType - for compatibility */
+  type?: 'REVENUE' | 'APPROPRIATION' | 'TRANSFER';
   category?: string;        // Department, program, object code, etc.
+
+  /** Generic amount field - typically represents adoptedAmount or amendedAmount */
+  amount?: number;
 
   // Audit trail
   createdAt: Date;

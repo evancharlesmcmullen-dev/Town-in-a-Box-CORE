@@ -62,8 +62,9 @@ export function validateMeetingTransition(
 
 /**
  * Actions that trigger meeting state transitions.
+ * Named MeetingTransitionAction to avoid conflict with MeetingAction interface in types.
  */
-export type MeetingAction =
+export type MeetingTransitionAction =
   | 'SCHEDULE'
   | 'POST_NOTICE'
   | 'START'
@@ -78,7 +79,7 @@ export type MeetingAction =
  */
 export function getTargetStateForAction(
   currentStatus: MeetingStatus,
-  action: MeetingAction
+  action: MeetingTransitionAction
 ): MeetingStatus | null {
   switch (action) {
     case 'SCHEDULE':

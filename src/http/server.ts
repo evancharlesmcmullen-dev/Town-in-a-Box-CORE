@@ -7,7 +7,11 @@
 // Or directly: npx ts-node-dev --respawn src/http/server.ts
 
 import express, { Express, Request, Response } from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { Pool } from 'pg';
+import { Server } from 'http';
 import {
   createAiBootstrap,
   InMemoryMeetingsService,
@@ -119,11 +123,50 @@ export async function createServer(config: Partial<ServerConfig> = {}): Promise<
   const aiClient = config.aiClient ?? new MockAiClient();
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Middleware
+  // Security Middleware
   // ─────────────────────────────────────────────────────────────────────────
 
-  // Parse JSON bodies
-  app.use(express.json());
+  // Security headers (helmet)
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+      },
+    },
+    crossOriginEmbedderPolicy: false, // Allow embedding for API
+  }));
+
+  // CORS configuration
+  const corsOptions = {
+    origin: process.env.CORS_ORIGIN || '*',
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id', 'x-user-id', 'x-request-id'],
+    exposedHeaders: ['x-request-id'],
+    credentials: true,
+    maxAge: 86400, // 24 hours
+  };
+  app.use(cors(corsOptions));
+
+  // Rate limiting (100 requests per minute per IP)
+  const limiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: process.env.RATE_LIMIT_MAX ? parseInt(process.env.RATE_LIMIT_MAX, 10) : 100,
+    message: { error: 'Too many requests, please try again later' },
+    standardHeaders: true, // Return rate limit info in headers
+    legacyHeaders: false,
+    skip: (req) => req.path === '/health', // Skip rate limiting for health checks
+  });
+  app.use(limiter);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Body Parsing & Logging
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Parse JSON bodies (with size limit)
+  app.use(express.json({ limit: '10mb' }));
 
   // Request logging and correlation ID
   app.use(requestLogger);
@@ -221,16 +264,16 @@ export async function createServer(config: Partial<ServerConfig> = {}): Promise<
 }
 
 /**
- * Start the HTTP server.
+ * Start the HTTP server with graceful shutdown support.
  */
 export async function startServer(
   config: ServerConfig = { port: 3000 }
-): Promise<void> {
+): Promise<Server> {
   const { app, ai } = await createServer(config);
 
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : config.port;
 
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     console.log('');
     console.log('='.repeat(60));
     console.log('Town-in-a-Box-CORE API Server');
@@ -251,6 +294,33 @@ export async function startServer(
     console.log('='.repeat(60));
     console.log('');
   });
+
+  // Graceful shutdown handler
+  const shutdown = (signal: string) => {
+    console.log(`\n[Server] ${signal} received, shutting down gracefully...`);
+
+    server.close((err) => {
+      if (err) {
+        console.error('[Server] Error during shutdown:', err);
+        process.exit(1);
+      }
+      console.log('[Server] HTTP server closed');
+      console.log('[Server] Shutdown complete');
+      process.exit(0);
+    });
+
+    // Force shutdown after 30 seconds
+    setTimeout(() => {
+      console.error('[Server] Forced shutdown after timeout');
+      process.exit(1);
+    }, 30000);
+  };
+
+  // Register shutdown handlers
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+
+  return server;
 }
 
 // Export types and utilities for use in other modules

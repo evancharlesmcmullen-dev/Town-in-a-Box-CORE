@@ -337,7 +337,7 @@ export function createIndianaFinanceRules(): ExecutableRule[] {
               (t) =>
                 t.fundId === fund.id &&
                 t.type === 'DISBURSEMENT' &&
-                t.status !== 'VOID'
+                t.status !== 'VOIDED'
             )
             .reduce((sum, t) => sum + t.amount, 0);
 
@@ -486,7 +486,7 @@ export function createIndianaFinanceRules(): ExecutableRule[] {
               (t) =>
                 t.fundId === fund.id &&
                 t.type === 'DISBURSEMENT' &&
-                t.status !== 'VOID' &&
+                t.status !== 'VOIDED' &&
                 new Date(t.transactionDate).getFullYear() === context.fiscalYear
             )
             .reduce((sum, t) => sum + t.amount, 0);
@@ -563,7 +563,7 @@ export function createIndianaFinanceRules(): ExecutableRule[] {
 
         // Check transfer transactions
         const transfers = context.transactions.filter(
-          (t) => t.type === 'TRANSFER' && t.status !== 'VOID'
+          (t) => t.type === 'TRANSFER' && t.status !== 'VOIDED'
         );
 
         for (const transfer of transfers) {

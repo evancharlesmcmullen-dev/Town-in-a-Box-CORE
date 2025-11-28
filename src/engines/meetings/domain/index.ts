@@ -12,9 +12,43 @@ export * from './state-machines';
 export * from './constants/indiana.constants';
 export * from './constants/audit-actions';
 
-// Services
-export * from './services/compliance.service';
-export * from './services/quorum.service';
+// Services - explicit exports to avoid naming conflicts
+// Compliance service exports (excluding calculateQuorum which is in quorum.service)
+export {
+  ComplianceError,
+  ComplianceOptions,
+  ValidationResult,
+  validateOpenDoorNotice,
+  validateVoteNotInExecSession,
+  validateAllExecSessionsCertified,
+  validateExecSessionPreCert,
+  validateExecSessionPostCert,
+  validateQuorum,
+  validateNotRecused,
+  filterRecusedVotes,
+  validateActionHasSecond,
+  validateMinutesApproval,
+  validateMeetingSchedule,
+  assertCompliance,
+  validateFindingsComplete,
+  validateApprovalSupported,
+  validateDenialSupported,
+  validateFindingsForAction,
+  validateFindingsNotLocked,
+} from './services/compliance.service';
+
+// Quorum service - calculateQuorum is the canonical implementation
+export {
+  VoteTally,
+  calculateQuorum,
+  calculateRequiredQuorum,
+  tallyVotes,
+  didMotionPass,
+  didSuperMajorityPass,
+  formatVoteTally,
+  haveAllMembersVoted,
+  getMembersNotVoted,
+} from './services/quorum.service';
 
 // Notice & Publication Engine Services
 export * from './services/publication-rule.service';
